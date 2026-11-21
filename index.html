@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Home Base</title>
+  <meta name="theme-color" content="#2f5d50">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <p class="eyebrow" id="dateLine">—</p>
+        <h1 id="greeting">Hello</h1>
+      </div>
+      <div class="top-right">
+        <span class="sync-pill" id="syncPill" title="Where your lists are saved">This device</span>
+        <button class="ghost small" id="signOutBtn" hidden>Sign out</button>
+      </div>
+    </header>
+
+    <!-- Today's summary -->
+    <section class="today" id="todayStrip" aria-label="Today at a glance"></section>
+
+    <main class="grid">
+      <!-- Weather -->
+      <article class="card weather" id="weatherCard">
+        <div class="card-head">
+          <h2>Weather</h2>
+          <span class="muted small" id="weatherPlace">Locating…</span>
+        </div>
+        <div id="weatherBody" class="weather-body"><p class="muted">Loading forecast…</p></div>
+      </article>
+
+      <!-- Moon -->
+      <article class="card moon">
+        <div class="card-head"><h2>Moon</h2><span class="muted small" id="moonAge"></span></div>
+        <div class="moon-body">
+          <svg id="moonSvg" viewBox="-4 -4 108 108" width="112" height="112" aria-hidden="true"></svg>
+          <div>
+            <p class="big" id="moonName">—</p>
+            <p class="muted" id="moonIllum"></p>
+            <ul class="facts" id="moonNext"></ul>
+          </div>
+        </div>
+      </article>
+
+      <!-- Traffic -->
+      <article class="card traffic">
+        <div class="card-head"><h2 id="trafficTitle">Ute Pass traffic</h2><span class="tag" id="trafficTag"></span></div>
+        <div id="trafficBody"></div>
+        <div class="link-row">
+          <a id="trafficMapLink" target="_blank" rel="noopener">Google Maps</a>
+          <a href="https://maps.cotrip.org/" target="_blank" rel="noopener">COtrip road conditions</a>
+        </div>
+      </article>
+
+      <!-- News -->
+      <article class="card news">
+        <div class="card-head">
+          <h2>Top story</h2>
+          <div class="seg" role="tablist" aria-label="News region">
+            <button role="tab" id="newsUs" data-region="us" aria-selected="true">U.S.</button>
+            <button role="tab" id="newsLocal" data-region="local" aria-selected="false">Local</button>
+          </div>
+        </div>
+        <div id="newsBody"></div>
+      </article>
+
+      <!-- Bins -->
+      <article class="card status-card" id="binsCard" hidden>
+        <div class="card-head"><h2>Garbage bins</h2><span class="tag" id="binsTag"></span></div>
+        <p class="big" id="binsTitle">—</p>
+        <p class="muted" id="binsDetail"></p>
+        <button class="primary" id="binsBtn" hidden></button>
+      </article>
+
+      <!-- Yard -->
+      <article class="card status-card" id="yardCard">
+        <div class="card-head"><h2>Yard work</h2><span class="tag" id="yardTag"></span></div>
+        <p class="big" id="yardTitle">—</p>
+        <p class="muted" id="yardDetail"></p>
+        <div class="weekend-compare" id="yardCompare"></div>
+        <button class="primary" id="yardBtn" hidden></button>
+      </article>
+
+      <!-- Groceries -->
+      <article class="card list-card groceries">
+        <div class="card-head"><h2>Groceries</h2><span class="muted small" id="groceryCount"></span></div>
+        <form class="add-row" id="groceryForm" autocomplete="off">
+          <label class="sr" for="groceryInput">Add a grocery item</label>
+          <input id="groceryInput" placeholder="Add an item, like eggs" maxlength="200">
+          <button class="mic" type="button" id="micBtn" hidden aria-label="Add groceries by voice" title="Add groceries by voice">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <button class="primary" type="submit">Add</button>
+        </form>
+        <p class="voice-status small" id="voiceStatus" hidden></p>
+        <ul class="checklist" id="groceryList"></ul>
+        <button class="ghost small" id="clearGroceries" hidden>Clear checked items</button>
+      </article>
+
+      <!-- Bills -->
+      <article class="card list-card bills">
+        <div class="card-head">
+          <h2>Upcoming bills</h2>
+          <button class="ghost small" id="scanBillsBtn">Check Gmail</button>
+        </div>
+        <p class="bills-total" id="billsTotal" hidden></p>
+        <ul class="bill-list" id="billList"></ul>
+        <p class="muted small" id="billsMeta"></p>
+      </article>
+
+      <!-- Chores -->
+      <article class="card list-card chores">
+        <div class="card-head"><h2>Household chores</h2><span class="muted small" id="choreCount"></span></div>
+        <ul class="chore-list" id="choreList"></ul>
+        <details class="add-chore">
+          <summary>Add a recurring chore</summary>
+          <form id="choreForm" class="chore-form" autocomplete="off">
+            <label for="choreName">Chore</label>
+            <input id="choreName" placeholder="Change HVAC filter" maxlength="60" required>
+            <label for="choreEvery">Every</label>
+            <div class="every-row">
+              <input id="choreEvery" type="number" min="1" max="365" value="1" required>
+              <select id="choreUnit">
+                <option value="day">days</option>
+                <option value="week">weeks</option>
+                <option value="month" selected>months</option>
+              </select>
+            </div>
+            <button class="primary" type="submit">Add chore</button>
+          </form>
+        </details>
+      </article>
+
+      <!-- Calendar -->
+      <article class="card calendar" id="calendarCard">
+        <div class="card-head"><h2>Calendar</h2><a class="small" href="https://calendar.google.com" target="_blank" rel="noopener">Open Google Calendar</a></div>
+        <div id="calendarBody"></div>
+      </article>
+
+      <!-- Notes -->
+      <article class="card list-card notes">
+        <div class="card-head"><h2>Notes &amp; reminders</h2></div>
+        <form class="add-row" id="noteForm" autocomplete="off">
+          <label class="sr" for="noteInput">Write a note</label>
+          <input id="noteInput" placeholder="Leave a note for the household" maxlength="200">
+          <button class="primary" type="submit">Post</button>
+        </form>
+        <ul class="notes-list" id="noteList"></ul>
+      </article>
+    </main>
+
+    <footer class="foot muted small">
+      Weather from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> and the National Weather Service.
+      <span id="updatedAt"></span>
+    </footer>
+  </div>
+
+  <!-- Sign-in screen (Firebase mode only) -->
+  <div class="signin" id="signin" hidden>
+    <div class="signin-box card">
+      <h2>Sign in to Home Base</h2>
+      <p class="muted">Use the Google account that's on your household's list.</p>
+      <button class="primary" id="signInBtn">Sign in with Google</button>
+      <p class="error small" id="signInError" hidden></p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
