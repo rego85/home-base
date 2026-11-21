@@ -39,13 +39,13 @@ window.DASH_CONFIG = {
 
   // Optional: paste your Firebase web config here to sync between devices (see SETUP.md).
   // Leave as null to keep everything on this device only.
-  firebase: null,
-  // firebase: {
-  //   apiKey: "...",
-  //   authDomain: "...firebaseapp.com",
-  //   projectId: "...",
-  //   storageBucket: "...",
-  //   messagingSenderId: "...",
-  //   appId: "..."
-  // },
+  // These values identify the project; they aren't secret. Access is limited by the Firestore rules.
+  firebase: {
+    apiKey: "AIzaSyAXbvpDvsUaymERspzGIVlA9rWnB1U2ih0",
+    authDomain: "home-base-ba90e.firebaseapp.com",
+    projectId: "home-base-ba90e",
+    storageBucket: "home-base-ba90e.firebasestorage.app",
+    messagingSenderId: "323623095430",
+    appId: "1:323623095430:web:05ee1054288d9ccb559507",
+  },
 };
