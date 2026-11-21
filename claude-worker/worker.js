@@ -12,7 +12,7 @@
 //   ALLOWED_ORIGIN     (text)    your site, e.g. https://YOUR-USERNAME.github.io
 //   TOMTOM_KEY         (secret, optional) free key from developer.tomtom.com, for traffic
 //   ANTHROPIC_API_KEY  (secret, optional) your key from console.anthropic.com, for Claude features
-//   FIREBASE_API_KEY   (text)    the apiKey value from config.js
+//   FIREBASE_API_KEY   (text, optional) defaults to the public apiKey in config.js
 //   ALLOWED_EMAILS     (text)    comma-separated, e.g. you@gmail.com,partner@gmail.com
 //   MODEL              (text, optional) defaults to claude-opus-5-5
 //
@@ -69,7 +69,7 @@ export default {
     // 1. Check the caller is signed in with an approved Google account.
     const idToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
     if (!idToken) return json({ error: "Sign in to Home Base first." }, 401);
-    const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${env.FIREBASE_API_KEY}`, {
+    const lookup = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${env.FIREBASE_API_KEY || "AIzaSyAXbvpDvsUaymERspzGIVlA9rWnB1U2ih0"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
