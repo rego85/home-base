@@ -235,7 +235,7 @@ async function getTrafficTile(pathname, env) {
   if (!m || !env.TOMTOM_KEY) return new Response("Not found", { status: 404 });
   const [z, x, y] = m.slice(1).map(Number);
   if (z > 18 || x >= 2 ** z || y >= 2 ** z) return new Response("Not found", { status: 404 });
-  const res = await fetch(`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/${z}/${x}/${y}.png?key=${env.TOMTOM_KEY}&tileSize=256&thickness=8`,
+  const res = await fetch(`https://api.tomtom.com/traffic/map/4/tile/flow/relative/${z}/${x}/${y}.png?key=${env.TOMTOM_KEY}&tileSize=256&thickness=8`,
     { cf: { cacheTtl: 120, cacheEverything: true } });
   return new Response(res.body, {
     status: res.status,
