@@ -27,7 +27,7 @@ window.DASH_CONFIG = {
   // Your Cloudflare Worker address (see SETUP.md, step 6). Powers news, traffic,
   // and the Claude features (voice commands and bill reading, which also need Firebase sync).
   // Example: "https://home-base-claude.YOUR-NAME.workers.dev"
-  workerUrl: "",
+  workerUrl: "https://home-base-api.zmueller1216.workers.dev",
 
   // Traffic panel: the drive to watch. Default is Ute Pass (US-24), Woodland Park to Colorado Springs.
   traffic: {

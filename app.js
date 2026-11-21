@@ -627,7 +627,12 @@ $("noteList").addEventListener("click", (e) => {
 
 /* ---------- bills from Gmail ---------- */
 const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
-let gmailToken = null, gmailTokenExp = 0;
+// Several Gmail accounts can be connected. The list lives on this device only; tokens live in memory for an hour.
+const gmailTokens = {}; // email -> { token, exp }
+let gmailAccounts = [];
+try { gmailAccounts = JSON.parse(localStorage.getItem("hb:gmailAccounts") || "[]"); } catch {}
+const saveGmailAccounts = () => { try { localStorage.setItem("hb:gmailAccounts", JSON.stringify(gmailAccounts)); } catch {} };
+const tokenValid = (email) => gmailTokens[email] && Date.now() < gmailTokens[email].exp;
 
 function loadGis() {
   return new Promise((resolve, reject) => {
@@ -640,27 +645,33 @@ function loadGis() {
     document.head.appendChild(s);
   });
 }
-async function getGmailToken() {
-  if (gmailToken && Date.now() < gmailTokenExp) return gmailToken;
+// Opens Google's popup for one account (hint) or the account chooser (choose), and returns that account's email.
+async function connectGmail(hint = "", choose = false) {
   await loadGis();
-  return new Promise((resolve, reject) => {
+  const tok = await new Promise((resolve, reject) => {
     const client = google.accounts.oauth2.initTokenClient({
       client_id: CFG.gmail.clientId,
       scope: "https://www.googleapis.com/auth/gmail.readonly",
-      callback: (r) => {
-        if (r.error) return reject(new Error(r.error_description || r.error));
-        gmailToken = r.access_token;
-        gmailTokenExp = Date.now() + (Number(r.expires_in) - 60) * 1000;
-        resolve(gmailToken);
-      },
-      error_callback: (e) => reject(new Error(e.type === "popup_closed" ? "Gmail sign-in was closed." : e.message || "Gmail sign-in failed.")),
+      hint,
+      callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
+      error_callback: (e) => reject(new Error(
+        e.type === "popup_closed" ? "Gmail sign-in was closed."
+          : e.type === "popup_failed_to_open" ? "Your browser blocked the Gmail sign-in window. Tap the button again."
+            : e.message || "Gmail sign-in failed.")),
     });
-    client.requestAccessToken({ prompt: "" });
+    client.requestAccessToken({ prompt: choose ? "select_account" : "", hint });
   });
+  const res = await fetch(`${GMAIL}/profile`, { headers: { Authorization: `Bearer ${tok.access_token}` } });
+  if (!res.ok) throw new Error(`Gmail error ${res.status}`);
+  const email = String((await res.json()).emailAddress || "").toLowerCase();
+  gmailTokens[email] = { token: tok.access_token, exp: Date.now() + (Number(tok.expires_in) - 60) * 1000 };
+  if (!gmailAccounts.includes(email)) { gmailAccounts.push(email); saveGmailAccounts(); }
+  return email;
 }
-async function gmailGet(path) {
-  const res = await fetch(`${GMAIL}/${path}`, { headers: { Authorization: `Bearer ${await getGmailToken()}` } });
-  if (res.status === 401) { gmailToken = null; throw new Error("Gmail access expired. Tap Check Gmail again."); }
+async function gmailGet(email, path) {
+  if (!tokenValid(email)) throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`);
+  const res = await fetch(`${GMAIL}/${path}`, { headers: { Authorization: `Bearer ${gmailTokens[email].token}` } });
+  if (res.status === 401) { delete gmailTokens[email]; throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`); }
   if (!res.ok) throw new Error(`Gmail error ${res.status}`);
   return res.json();
 }
@@ -684,8 +695,8 @@ function emailText(payload) {
   }
   return plain.replace(/\s+/g, " ").trim().slice(0, 2500);
 }
-async function fetchEmail(id) {
-  const m = await gmailGet(`messages/${id}?format=full`);
+async function fetchEmail(account, id) {
+  const m = await gmailGet(account, `messages/${id}?format=full`);
   const h = Object.fromEntries((m.payload.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
   const fromName = (h.from || "").replace(/<.*>/, "").replace(/"/g, "").trim() || (h.from || "").replace(/.*@|>.*/g, "");
   return { id, from: fromName, subject: h.subject || "", date: ymd(new Date(Number(m.internalDate))), body: emailText(m.payload) };
@@ -739,52 +750,103 @@ async function extractBills(emails) {
   return { bills: emails.map(guessBill), by: "" };
 }
 
+// Reads one connected account's new bill emails into the shared bills list.
+async function scanAccount(account) {
+  billsMeta(`Checking ${account}…`);
+  const list = await gmailGet(account, `messages?maxResults=${CFG.gmail.maxEmails || 25}&q=${encodeURIComponent(CFG.gmail.query)}`);
+  const seen = new Set(S.bills.map((b) => b.msgId));
+  const ids = (list.messages || []).map((m) => m.id).filter((id) => !seen.has(id));
+  if (!ids.length) return { account, checked: 0, found: 0, by: "" };
+  billsMeta(`Reading ${ids.length} new email${ids.length > 1 ? "s" : ""} from ${account}…`);
+  const emails = await Promise.all(ids.map((id) => fetchEmail(account, id)));
+  const { bills, by } = await extractBills(emails);
+  const byId = Object.fromEntries(emails.map((e) => [e.id, e]));
+  let found = 0;
+  for (const b of bills) {
+    const e = byId[b.id];
+    if (!e) continue;
+    const rec = {
+      msgId: e.id, account, kind: b.kind, payee: (b.payee || e.from).slice(0, 60), amount: String(b.amount || ""),
+      dueDate: /^\d{4}-\d{2}-\d{2}$/.test(b.dueDate || "") ? b.dueDate : "", autopay: !!b.autopay,
+      subject: e.subject.slice(0, 120), emailDate: e.date, paid: false, hidden: b.kind !== "bill", at: Date.now(),
+    };
+    if (b.kind === "payment_confirmation") {
+      // Mark an unpaid bill from the same sender as paid.
+      const key = rec.payee.toLowerCase().split(/\s+/)[0];
+      S.bills.filter((x) => x.kind === "bill" && !x.paid && x.payee.toLowerCase().includes(key))
+        .forEach((x) => S.store.update("bills", x.id, { paid: true }));
+    }
+    if (b.kind === "bill") found++;
+    S.store.add("bills", rec);
+  }
+  return { account, checked: emails.length, found, by };
+}
+
 let scanning = false;
-async function scanBills() {
+// Checks every connected account (or just `only`). Google allows one sign-in window per tap, so an
+// account whose hourly access ran out after the first window is left for the next tap.
+async function scanBills(only = "", addNew = false) {
   if (scanning) return;
   if (!CFG.gmail?.clientId) { billsMeta("Add a Gmail client ID in config.js to turn this on. SETUP.md, step 7, shows how.", "err"); return; }
   scanning = true;
-  $("scanBillsBtn").disabled = true;
+  document.querySelectorAll(".bills button").forEach((b) => (b.disabled = true));
+  const results = [], waiting = [];
   try {
-    billsMeta("Connecting to Gmail…");
-    const list = await gmailGet(`messages?maxResults=${CFG.gmail.maxEmails || 25}&q=${encodeURIComponent(CFG.gmail.query)}`);
-    const seen = new Set(S.bills.map((b) => b.msgId));
-    const ids = (list.messages || []).map((m) => m.id).filter((id) => !seen.has(id));
-    if (!ids.length) { billsMeta("No new bill emails."); S.store.setStatus({ billsScannedAt: Date.now() }); return; }
-    billsMeta(`Reading ${ids.length} new email${ids.length > 1 ? "s" : ""}…`);
-    const emails = await Promise.all(ids.map(fetchEmail));
-    const { bills, by } = await extractBills(emails);
-    const byId = Object.fromEntries(emails.map((e) => [e.id, e]));
-    let found = 0;
-    for (const b of bills) {
-      const e = byId[b.id];
-      if (!e) continue;
-      const rec = {
-        msgId: e.id, kind: b.kind, payee: (b.payee || e.from).slice(0, 60), amount: String(b.amount || ""),
-        dueDate: /^\d{4}-\d{2}-\d{2}$/.test(b.dueDate || "") ? b.dueDate : "", autopay: !!b.autopay,
-        subject: e.subject.slice(0, 120), emailDate: e.date, paid: false, hidden: b.kind !== "bill", at: Date.now(),
-      };
-      if (b.kind === "payment_confirmation") {
-        // Mark an unpaid bill from the same sender as paid.
-        const key = rec.payee.toLowerCase().split(/\s+/)[0];
-        S.bills.filter((x) => x.kind === "bill" && !x.paid && x.payee.toLowerCase().includes(key))
-          .forEach((x) => S.store.update("bills", x.id, { paid: true }));
+    let accounts = only ? [only] : [...gmailAccounts];
+    let popupUsed = false;
+    if (addNew || !accounts.length) {
+      billsMeta("Choose a Gmail account…");
+      accounts = [await connectGmail("", true)];
+      popupUsed = true;
+    }
+    for (let account of accounts) {
+      if (!tokenValid(account)) {
+        if (popupUsed) { waiting.push(account); continue; }
+        billsMeta(`Connecting to ${account}…`);
+        account = await connectGmail(account);
+        popupUsed = true;
       }
-      if (b.kind === "bill") found++;
-      S.store.add("bills", rec);
+      results.push(await scanAccount(account));
     }
     S.store.setStatus({ billsScannedAt: Date.now() });
-    billsMeta(`Checked ${emails.length} email${emails.length > 1 ? "s" : ""}${by ? ` with ${by}` : ""}. Found ${found} new bill${found === 1 ? "" : "s"}.`);
+    const found = results.reduce((s, r) => s + r.found, 0);
+    const checked = results.reduce((s, r) => s + r.checked, 0);
+    const by = results.find((r) => r.by)?.by;
+    let msg = checked
+      ? `Checked ${checked} new email${checked > 1 ? "s" : ""}${by ? ` with ${by}` : ""} in ${results.length} account${results.length > 1 ? "s" : ""}. Found ${found} new bill${found === 1 ? "" : "s"}.`
+      : `No new bill emails in ${results.map((r) => r.account).join(" or ")}.`;
+    if (waiting.length) msg += ` Tap Check Gmail again to check ${waiting.join(" and ")}.`;
+    billsMeta(msg);
   } catch (e) {
     console.error(e);
     billsMeta(e.message || "Couldn't check Gmail.", "err");
   } finally {
     scanning = false;
-    $("scanBillsBtn").disabled = false;
+    document.querySelectorAll(".bills button").forEach((b) => (b.disabled = false));
+    renderBills();
   }
 }
 function billsMeta(text, cls = "") { const el = $("billsMeta"); el.textContent = text; el.className = `small ${cls === "err" ? "error" : "muted"}`; billsMeta.sticky = Date.now(); }
-$("scanBillsBtn").addEventListener("click", scanBills);
+$("scanBillsBtn").addEventListener("click", () => scanBills());
+$("addGmailBtn").addEventListener("click", () => scanBills("", true));
+$("gmailAccts").addEventListener("click", (e) => {
+  const email = e.target.closest("[data-email]")?.dataset.email;
+  if (!email) return;
+  if (e.target.dataset.act === "forget") {
+    gmailAccounts = gmailAccounts.filter((a) => a !== email);
+    delete gmailTokens[email];
+    saveGmailAccounts();
+    renderBills();
+    billsMeta(`Stopped checking ${email} on this device. Bills already found stay on the list.`);
+  } else scanBills(email);
+});
+function renderGmailAccounts() {
+  $("gmailAccts").innerHTML = gmailAccounts.map((a) => `
+    <span class="acct" data-email="${esc(a)}">
+      <button class="acct-check" data-act="check" title="Check ${esc(a)} now">${esc(a)}</button>
+      <button class="x" data-act="forget" aria-label="Stop checking ${esc(a)}" title="Stop checking this account">×</button>
+    </span>`).join("");
+}
 
 const money = (a) => { const n = Number(a); return a !== "" && !isNaN(n) ? n.toLocaleString(undefined, { style: "currency", currency: "USD" }) : ""; };
 function billDue(b) {
@@ -806,6 +868,7 @@ function visibleBills() {
     .sort((a, b) => billDue(a).days - billDue(b).days);
 }
 function renderBills() {
+  renderGmailAccounts();
   const list = visibleBills();
   const soon = list.filter((b) => billDue(b).days <= 14 && b.amount);
   const total = soon.reduce((s, b) => s + Number(b.amount || 0), 0);
@@ -817,7 +880,7 @@ function renderBills() {
       <div class="bill-main">
         <div class="bill-top"><span class="name">${esc(b.payee)}</span><span class="amt">${esc(money(b.amount))}</span></div>
         <div class="when ${due.cls}">${esc(due.text)}${b.autopay ? ' <span class="pill">Autopay</span>' : ""}</div>
-        <div class="when"><a href="https://mail.google.com/mail/u/0/#all/${esc(b.msgId)}" target="_blank" rel="noopener">Open email</a></div>
+        <div class="when"><a href="https://mail.google.com/mail/?authuser=${encodeURIComponent(b.account || "")}#all/${esc(b.msgId)}" target="_blank" rel="noopener">Open email</a>${b.account && gmailAccounts.length > 1 ? ` · ${esc(b.account)}` : ""}</div>
       </div>
       <div class="bill-actions">
         <button class="ghost small" data-act="paid">Paid</button>
