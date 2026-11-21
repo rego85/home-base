@@ -344,8 +344,11 @@ button:disabled { opacity: .55; cursor: progress; }
 .acct { display: inline-flex; align-items: center; background: var(--card-2); border: 1px solid var(--line); border-radius: 999px; padding-left: 4px; max-width: 100%; }
 .acct-check { background: transparent; padding: 3px 6px; font-size: .78rem; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .acct .x { font-size: .95rem; padding: 2px 8px; }
-.link-btn { background: transparent; color: var(--pine); padding: 3px 4px; font-size: .82rem; }
-.link-btn:hover { text-decoration: underline; }
+.link-btn {
+  background: transparent; color: var(--pine); font-size: .8rem; font-weight: 600;
+  padding: 4px 10px; border: 1px dashed var(--pine); border-radius: 999px;
+}
+.link-btn:hover { background: var(--good-soft); }
 
 .notes-list { gap: 8px; }
 .notes-list li {
