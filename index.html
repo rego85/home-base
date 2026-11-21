@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=12"></script>
+  <script src="config.js?v=13"></script>
 </head>
 <body>
   <div class="wrap">
@@ -24,7 +24,10 @@
         <h1 id="greeting">Hello</h1>
       </div>
       <div class="top-right">
+        <span class="clock" id="clock" aria-live="off"></span>
         <span class="sync-pill" id="syncPill" title="Where your lists are saved">This device</span>
+        <button class="ghost small" id="fullscreenBtn" hidden>Full screen</button>
+        <button class="ghost small" id="viewBtn" title="Switch between the scrolling view and a one-screen wall view">Wall view</button>
         <button class="ghost small" id="signOutBtn" hidden>Sign out</button>
       </div>
     </header>
@@ -188,6 +191,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=12"></script>
+  <script type="module" src="app.js?v=13"></script>
 </body>
 </html>

@@ -382,3 +382,90 @@ button:disabled { opacity: .55; cursor: progress; }
   .card { animation: rise .35s ease both; }
   @keyframes rise { from { transform: translateY(6px); } to { transform: none; } }
 }
+
+/* ===== Wall view: one screen, no scrolling, sized for a 1920x1080 display seen from across the room ===== */
+.clock { display: none; }
+html.wall { font-size: clamp(13px, 0.92vw, 24px); height: 100%; overflow: hidden; }
+html.wall body { height: 100%; overflow: hidden; font-size: 1rem; }
+html.wall .wrap {
+  max-width: none; height: 100%; gap: .8rem;
+  padding-block: max(.9rem, env(safe-area-inset-top)) max(.9rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px)); padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+html.wall .top { flex-wrap: nowrap; align-items: center; }
+html.wall h1 { font-size: 2.2rem; }
+html.wall .clock {
+  display: block; font-family: var(--display); font-weight: 700; font-size: 3rem; line-height: 1;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; margin-right: .6rem;
+}
+html.wall .sync-pill, html.wall #signOutBtn, html.wall .foot, html.wall .calendar { display: none; }
+html.wall .today { flex-wrap: nowrap; overflow: hidden; }
+html.wall .chip { white-space: nowrap; font-size: .95rem; }
+
+html.wall .grid {
+  flex: 1; min-height: 0; gap: .8rem;
+  grid-template-columns: 1.15fr 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  grid-template-areas:
+    "weather traffic news groceries"
+    "weather traffic bills groceries"
+    "moon yard bills chores"
+    "notes notes notes notes";
+  grid-template-rows: 1fr 1fr 1fr auto;
+}
+html.wall .grid.show-bins {
+  grid-template-rows: auto 1fr 1fr 1fr auto;
+  grid-template-areas:
+    "bins bins bins bins"
+    "weather traffic news groceries"
+    "weather traffic bills groceries"
+    "moon yard bills chores"
+    "notes notes notes notes";
+}
+html.wall .card { padding: .9rem 1rem; gap: .6rem; min-height: 0; overflow: hidden; }
+html.wall h2 { font-size: 1.15rem; }
+html.wall .big { font-size: 1.35rem; }
+/* Long lists scroll inside their card instead of growing the page. */
+html.wall .checklist, html.wall .bill-list, html.wall .chore-list, html.wall .headlines {
+  min-height: 0; overflow-y: auto; scrollbar-width: thin;
+}
+html.wall .groceries .checklist, html.wall .bill-list { flex: 1; }
+html.wall .gmail-accts, html.wall .add-chore, html.wall #billsMeta { display: none; }
+
+/* Weather: current conditions plus the week, compact. */
+html.wall .weather-body { gap: .7rem; min-height: 0; }
+html.wall .now-temp { font-size: 3.6rem; }
+html.wall .now-icon { width: 4.2rem; height: 4.2rem; }
+html.wall .now-meta { margin-left: 0; }
+html.wall .days { grid-template-columns: repeat(7, minmax(0, 1fr)); overflow: hidden; }
+html.wall .day { padding: .5rem .2rem; font-size: .85rem; }
+html.wall .day svg { width: 2rem; height: 2rem; }
+html.wall .alert { font-size: .9rem; padding: .5rem .7rem; }
+
+/* Traffic: the map takes the spare height. */
+html.wall .traffic-map { flex: 1; height: auto; min-height: 7rem; }
+html.wall .traffic .link-row, html.wall .traffic #trafficBody > p.muted:last-child { display: none; }
+html.wall .drive { padding: .35rem 0; }
+html.wall .drive-time b { font-size: 1.7rem; }
+
+/* News: headline plus a couple of others. */
+html.wall .headline { font-size: 1.35rem; }
+html.wall .headlines li { padding: .4rem 0; font-size: .9rem; }
+
+/* Moon and yard: smaller pictures. */
+html.wall .moon-body svg { width: 5.5rem; height: 5.5rem; }
+html.wall .weekend-compare { gap: .4rem; }
+
+/* Notes run along the bottom as a strip of sticky notes. */
+html.wall .notes { flex-direction: row; align-items: center; gap: 1rem; padding-block: .6rem; }
+html.wall .notes .card-head { flex: none; }
+html.wall .notes #noteForm { flex: 0 1 26rem; }
+html.wall .notes-list { flex: 1; flex-direction: row; overflow-x: auto; overflow-y: hidden; min-width: 0; }
+html.wall .notes-list li { flex: 0 0 auto; max-width: 22rem; }
+html.wall .notes .voice-status { flex: none; }
+
+/* Garbage night banner across the top. */
+html.wall #binsCard { flex-direction: row; align-items: center; gap: 1.2rem; padding-block: .7rem; }
+html.wall #binsCard .card-head { flex: none; }
+html.wall #binsCard .big { font-size: 1.7rem; }
+html.wall #binsCard button { margin: 0 0 0 auto; font-size: 1.05rem; }

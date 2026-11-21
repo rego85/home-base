@@ -1170,6 +1170,48 @@ function renderAll() {
   renderToday(bins, yard, moon, due, bills);
 }
 
+/* ---------- wall view (one screen, no scrolling) ---------- */
+// Chosen per device and remembered; a link ending in #wall always opens it.
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && "wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => (wakeLock = null));
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+function setView(wall, remember = true) {
+  document.documentElement.classList.toggle("wall", wall);
+  $("viewBtn").textContent = wall ? "Scroll view" : "Wall view";
+  $("fullscreenBtn").hidden = !wall || !document.fullscreenEnabled;
+  if (remember) { try { localStorage.setItem("hb:view", wall ? "wall" : "scroll"); } catch {} }
+  keepAwake(wall);
+  if (tmap) setTimeout(() => { tmap.invalidateSize(); if (tLine) tmap.fitBounds(tLine.getBounds(), { padding: [14, 14] }); }, 50);
+  if (!wall && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+function tickClock() {
+  $("clock").textContent = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+$("viewBtn").addEventListener("click", () => setView(!document.documentElement.classList.contains("wall")));
+$("fullscreenBtn").addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen().catch(() => {});
+});
+document.addEventListener("fullscreenchange", () => { $("fullscreenBtn").textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && document.documentElement.classList.contains("wall")) keepAwake(true);
+});
+window.addEventListener("resize", () => tmap?.invalidateSize());
+{
+  let saved = "";
+  try { saved = localStorage.getItem("hb:view") || ""; } catch {}
+  const fromLink = location.hash === "#wall";
+  setView(fromLink || saved === "wall", !fromLink);
+  tickClock();
+  setInterval(tickClock, 15000);
+}
+
 /* ---------- boot ---------- */
 function maybeSeed() {
   if (!S.loaded.status || !S.loaded.chores || S.status.seeded) return;
