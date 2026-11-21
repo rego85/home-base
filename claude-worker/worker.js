@@ -130,10 +130,18 @@ async function askClaude(env, system, schema, content) {
   catch { return { error: "Claude's answer couldn't be read." }; }
 }
 
-// ---------- News: top stories from Google News RSS (personal, non-commercial use) ----------
+// ---------- News: top stories from RSS feeds (personal, non-commercial use) ----------
+// Each region tries its feeds in order; Google News sometimes refuses requests from cloud servers.
 const FEEDS = {
-  us: "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
-  local: "https://news.google.com/rss/search?q=%22Colorado+Springs%22+OR+%22Woodland+Park%22+OR+%22Teller+County%22+OR+%22Ute+Pass%22+when:1d&hl=en-US&gl=US&ceid=US:en",
+  us: [
+    { url: "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en" },
+    { url: "https://feeds.npr.org/1001/rss.xml", name: "NPR" },
+  ],
+  local: [
+    { url: "https://news.google.com/rss/search?q=%22Colorado+Springs%22+OR+%22Woodland+Park%22+OR+%22Teller+County%22+OR+%22Ute+Pass%22+when:1d&hl=en-US&gl=US&ceid=US:en" },
+    { url: "https://www.bing.com/news/search?q=Colorado+Springs&format=rss", name: "Bing News" },
+    { url: "https://krdo.com/feed/", name: "KRDO" },
+  ],
 };
 const decodeXml = (s) => s
   .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -141,20 +149,32 @@ const decodeXml = (s) => s
   .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
   .replace(/&amp;/g, "&")
   .trim();
-function parseRss(xml) {
-  return xml.split("<item>").slice(1).map((chunk) => {
+function parseRss(xml, feedName = "") {
+  return xml.split(/<item[\s>]/).slice(1).map((chunk) => {
     const tag = (name) => { const m = chunk.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`)); return m ? decodeXml(m[1]) : ""; };
-    const source = tag("source");
+    const source = tag("source") || tag("News:Source") || feedName;
     let title = tag("title");
     if (source && title.endsWith(` - ${source}`)) title = title.slice(0, -(source.length + 3));
-    return { title, source, link: tag("link"), published: tag("pubDate") };
+    let link = tag("link");
+    // Bing wraps links in a click-tracking redirect; use the real article address.
+    const real = link.match(/[?&]url=([^&]+)/);
+    if (/bing\.com\/news\/apiclick/.test(link) && real) link = decodeURIComponent(real[1]);
+    return { title, source, link, published: tag("pubDate") };
   }).filter((i) => i.title && /^https:\/\//.test(i.link));
 }
 async function getNews(region) {
-  const feed = FEEDS[region] || FEEDS.us;
-  const res = await fetch(feed, { headers: { "User-Agent": "Mozilla/5.0 (HomeBase dashboard)" }, cf: { cacheTtl: 900, cacheEverything: true } });
-  if (!res.ok) throw new Error(`News feed error ${res.status}`);
-  return { items: parseRss(await res.text()).slice(0, 6) };
+  const feeds = FEEDS[region] || FEEDS.us;
+  let lastError = "";
+  for (const feed of feeds) {
+    try {
+      const res = await fetch(feed.url, { headers: { "User-Agent": "Mozilla/5.0 (HomeBase dashboard)" }, cf: { cacheTtl: 900, cacheEverything: true } });
+      if (!res.ok) { lastError = `News feed error ${res.status}`; continue; }
+      const items = parseRss(await res.text(), feed.name).slice(0, 6);
+      if (items.length) return { items };
+      lastError = "No headlines in the feed.";
+    } catch (e) { lastError = e.message; }
+  }
+  throw new Error(lastError || "Couldn't load the news.");
 }
 
 // ---------- Traffic: drive times and incidents from TomTom (free key) ----------
