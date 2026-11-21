@@ -668,12 +668,27 @@ async function connectGmail(hint = "", choose = false) {
   if (!gmailAccounts.includes(email)) { gmailAccounts.push(email); saveGmailAccounts(); }
   return email;
 }
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function gmailGet(email, path) {
-  if (!tokenValid(email)) throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`);
-  const res = await fetch(`${GMAIL}/${path}`, { headers: { Authorization: `Bearer ${gmailTokens[email].token}` } });
-  if (res.status === 401) { delete gmailTokens[email]; throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`); }
-  if (!res.ok) throw new Error(`Gmail error ${res.status}`);
-  return res.json();
+  for (let attempt = 0; ; attempt++) {
+    if (!tokenValid(email)) throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`);
+    const res = await fetch(`${GMAIL}/${path}`, { headers: { Authorization: `Bearer ${gmailTokens[email].token}` } });
+    if (res.status === 401) { delete gmailTokens[email]; throw new Error(`Gmail access for ${email} expired. Tap Check Gmail again.`); }
+    // 429 and 5xx mean "slow down" or a hiccup: wait a little longer each time, then try again.
+    if ((res.status === 429 || res.status >= 500) && attempt < 5) { await wait(1000 * 2 ** attempt + Math.random() * 500); continue; }
+    if (res.status === 429) throw new Error("Gmail is busy right now. Wait a minute, then tap Check Gmail again.");
+    if (!res.ok) throw new Error(`Gmail error ${res.status}`);
+    return res.json();
+  }
+}
+// Runs fn over items with at most `limit` running at once (Gmail rejects too many parallel requests).
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i]); }
+  }));
+  return out;
 }
 
 const b64url = (s) => {
@@ -758,7 +773,7 @@ async function scanAccount(account) {
   const ids = (list.messages || []).map((m) => m.id).filter((id) => !seen.has(id));
   if (!ids.length) return { account, checked: 0, found: 0, by: "" };
   billsMeta(`Reading ${ids.length} new email${ids.length > 1 ? "s" : ""} from ${account}…`);
-  const emails = await Promise.all(ids.map((id) => fetchEmail(account, id)));
+  const emails = await mapLimit(ids, 3, (id) => fetchEmail(account, id));
   const { bills, by } = await extractBills(emails);
   const byId = Object.fromEntries(emails.map((e) => [e.id, e]));
   let found = 0;
