@@ -1,7 +1,7 @@
 ﻿// Caches the app shell so Home Base opens instantly and works offline.
 // When you change app files, bump VERSION here and the ?v= number in index.html (and SHELL below).
-const VERSION = "home-base-v7";
-const SHELL = ["./", "index.html", "styles.css?v=7", "app.js?v=7", "config.js?v=7", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "home-base-v8";
+const SHELL = ["./", "index.html", "styles.css?v=8", "app.js?v=8", "config.js?v=8", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   // "reload" skips the browser's HTTP cache, so a new version never installs old files.

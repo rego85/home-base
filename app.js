@@ -829,6 +829,14 @@ async function scanBills(only = "", addNew = false) {
 function billsMeta(text, cls = "") { const el = $("billsMeta"); el.textContent = text; el.className = `small ${cls === "err" ? "error" : "muted"}`; billsMeta.sticky = Date.now(); }
 $("scanBillsBtn").addEventListener("click", () => scanBills());
 $("addGmailBtn").addEventListener("click", () => scanBills("", true));
+// Clears every bill found so far and reads the emails again, e.g. after turning on the Claude worker.
+$("rereadBillsBtn").addEventListener("click", async () => {
+  if (!S.bills.length) return scanBills();
+  if (!confirm(`Clear all ${S.bills.length} saved bill entries and read the emails again${CFG.workerUrl ? " with Claude" : ""}? Bills you marked paid or hid will come back if they're still in Gmail.`)) return;
+  await S.store.removeMany("bills", S.bills.map((b) => b.id));
+  S.bills = [];
+  scanBills();
+});
 $("gmailAccts").addEventListener("click", (e) => {
   const email = e.target.closest("[data-email]")?.dataset.email;
   if (!email) return;
@@ -859,13 +867,19 @@ function billDue(b) {
   return { cls: "", text: `Due ${fmtDay(parseYmd(b.dueDate), { month: "short", day: "numeric" })}`, days: d };
 }
 function visibleBills() {
-  return S.bills
+  const open = S.bills
     .filter((b) => b.kind === "bill" && !b.hidden && !b.paid)
     .filter((b) => {
       const d = billDue(b).days;
       return b.dueDate ? d >= -14 && d <= 45 : daysBetween(parseYmd(b.emailDate), new Date()) <= 30;
-    })
-    .sort((a, b) => billDue(a).days - billDue(b).days);
+    });
+  // A newer statement from the same company replaces the older one.
+  const latest = {};
+  for (const b of open) {
+    const key = b.payee.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!latest[key] || b.emailDate > latest[key].emailDate) latest[key] = b;
+  }
+  return Object.values(latest).sort((a, b) => billDue(a).days - billDue(b).days);
 }
 function renderBills() {
   renderGmailAccounts();
