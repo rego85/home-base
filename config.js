@@ -18,7 +18,7 @@ window.DASH_CONFIG = {
 
   // Optional: read upcoming bills from Gmail (see SETUP.md, step 7).
   gmail: {
-    clientId: "", // e.g. "1234567890-abc123.apps.googleusercontent.com"
+    clientId: "323623095430-bkjsi5o9618bt65qnuvais7af657c0gh.apps.googleusercontent.com",
     // Which emails count as possible bills. Uses Gmail search syntax.
     query: 'newer_than:45d -in:spam -in:trash (subject:(bill OR statement OR "payment due" OR "amount due" OR autopay OR "scheduled payment" OR "payment received" OR invoice OR "payment confirmation") OR "amount due" OR "payment due")',
     maxEmails: 25,
