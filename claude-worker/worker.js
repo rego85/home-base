@@ -1,7 +1,8 @@
 // Home Base helper worker (Cloudflare Workers).
 //
 // GET  /news?region=us|local   top headlines (no keys needed)
-// GET  /traffic?from=&to=&road= drive times and incidents (needs TOMTOM_KEY)
+// GET  /traffic?from=&to=&road= drive times, route shape and incidents (needs TOMTOM_KEY)
+// GET  /tile/{z}/{x}/{y}.png    live traffic-flow map tiles (needs TOMTOM_KEY)
 // POST { text, current }        Claude voice commands for groceries (needs ANTHROPIC_API_KEY + sign-in)
 // POST { kind: "bills", ... }   Claude reads bill emails (needs ANTHROPIC_API_KEY + sign-in)
 //
@@ -58,6 +59,7 @@ export default {
       try {
         if (url.pathname === "/news") return json(await getNews(url.searchParams.get("region")));
         if (url.pathname === "/traffic") return json(await getTraffic(url.searchParams, env));
+        if (url.pathname.startsWith("/tile/")) return await getTrafficTile(url.pathname, env);
       } catch (e) {
         console.error(e);
         return json({ error: e.message || "Couldn't load that." }, 502);
@@ -189,13 +191,20 @@ async function getTraffic(params, env) {
   const route = async (from, to) => {
     const r = await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${from}:${to}/json?key=${env.TOMTOM_KEY}&traffic=true&travelMode=car&routeType=fastest&computeTravelTimeFor=all`, opts);
     if (!r.ok) throw new Error(`Traffic error ${r.status}`);
-    const s = (await r.json()).routes?.[0]?.summary;
+    const rt = (await r.json()).routes?.[0];
+    const s = rt?.summary;
     if (!s) return null;
+    // The road's shape for drawing on the map, thinned to at most ~150 points.
+    const pts = (rt.legs || []).flatMap((l) => l.points || []);
+    const step = Math.max(1, Math.ceil(pts.length / 150));
+    const path = pts.filter((_, i) => i % step === 0 || i === pts.length - 1)
+      .map((p) => [Math.round(p.latitude * 1e5) / 1e5, Math.round(p.longitude * 1e5) / 1e5]);
     return {
       minutes: Math.round(s.travelTimeInSeconds / 60),
       usual: Math.round((s.noTrafficTravelTimeInSeconds || s.travelTimeInSeconds) / 60),
       delay: Math.round((s.trafficDelayInSeconds || 0) / 60),
       miles: Math.round((s.lengthInMeters / 1609.34) * 10) / 10,
+      path,
     };
   };
   // Box around the two ends, padded a little, for incidents along the way.
@@ -216,7 +225,22 @@ async function getTraffic(params, env) {
       until: p.endTime || "",
     })).slice(0, 6) : [];
   const [down, up] = await Promise.all([route(a, b), route(b, a)]);
+  if (up) delete up.path; // one line on the map is enough
   return { down, up, incidents, road, at: Date.now() };
+}
+
+// Live traffic-flow map tiles (green/yellow/red roads), passed through so the TomTom key stays here.
+async function getTrafficTile(pathname, env) {
+  const m = pathname.match(/^\/tile\/(\d{1,2})\/(\d{1,7})\/(\d{1,7})\.png$/);
+  if (!m || !env.TOMTOM_KEY) return new Response("Not found", { status: 404 });
+  const [z, x, y] = m.slice(1).map(Number);
+  if (z > 18 || x >= 2 ** z || y >= 2 ** z) return new Response("Not found", { status: 404 });
+  const res = await fetch(`https://api.tomtom.com/traffic/map/4/tile/flow/relative0/${z}/${x}/${y}.png?key=${env.TOMTOM_KEY}&tileSize=256&thickness=8`,
+    { cf: { cacheTtl: 120, cacheEverything: true } });
+  return new Response(res.body, {
+    status: res.status,
+    headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=120", "Access-Control-Allow-Origin": "*" },
+  });
 }
 
 // ---------- Bills: read bill emails and pull out payee, amount and due date ----------

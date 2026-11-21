@@ -181,6 +181,12 @@ p { margin: 0; }
 }
 
 /* Traffic */
+.traffic-map {
+  height: 210px; border-radius: 12px; overflow: hidden; background: var(--card-2);
+  border: 1px solid var(--line); isolation: isolate; /* keeps Leaflet's layers under the sticky UI */
+}
+.traffic-map .leaflet-control-attribution { font-size: 9px; }
+.traffic-map .leaflet-tooltip { font: 600 .75rem var(--body); }
 .drive { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .drive-to { font-weight: 600; }
 .drive-time { white-space: nowrap; display: flex; align-items: center; gap: 6px; color: var(--muted); }

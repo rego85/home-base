@@ -470,14 +470,20 @@ async function askClaude(said) {
   return data; // { add: [], remove: [], reply: "" }
 }
 
-function voiceStatus(text, cls = "") {
-  const el = $("voiceStatus");
-  el.hidden = !text;
-  el.textContent = text;
-  el.className = `voice-status small ${cls}`;
-  clearTimeout(voiceStatus.t);
-  if (cls === "ok") voiceStatus.t = setTimeout(() => (el.hidden = true), 8000);
+// Shows a short status line under a form; success messages fade after 8 seconds.
+function statusLine(id) {
+  let timer;
+  return (text, cls = "") => {
+    const el = $(id);
+    el.hidden = !text;
+    el.textContent = text;
+    el.className = `voice-status small ${cls}`;
+    clearTimeout(timer);
+    if (cls === "ok") timer = setTimeout(() => (el.hidden = true), 8000);
+  };
 }
+const voiceStatus = statusLine("voiceStatus");
+const noteStatus = statusLine("noteVoiceStatus");
 
 async function handleSpoken(said) {
   voiceStatus(`Heard: "${said}"`);
@@ -500,48 +506,66 @@ async function handleSpoken(said) {
   else voiceStatus(reply || `Didn't catch a grocery item in "${said}". Try "add milk and eggs".`, reply ? "ok" : "err");
 }
 
-function setupVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const btn = $("micBtn");
-  if (!SR) return;
+// Connects a mic button to an input box using the browser's speech recognition (Chrome, Edge).
+// `long` keeps listening through pauses until the mic is tapped again or there's a long silence.
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+function attachMic({ btn, input, status, prompt, long = false, onDone }) {
+  if (!SpeechRec) return;
   btn.hidden = false;
   let rec = null;
-  const stop = () => { btn.classList.remove("listening"); rec = null; };
-  const start = () => {
+  btn.addEventListener("click", () => {
     if (rec) { rec.stop(); return; }
-    rec = new SR();
+    rec = new SpeechRec();
     rec.lang = navigator.language || "en-US";
     rec.interimResults = true;
-    rec.maxAlternatives = 1;
+    rec.continuous = long;
+    const before = input.value ? input.value.trim() + " " : "";
     let finalText = "";
     rec.onresult = (ev) => {
-      let interim = "";
-      for (const r of ev.results) (r.isFinal ? (finalText = r[0].transcript) : (interim += r[0].transcript));
-      $("groceryInput").value = finalText || interim;
+      let fin = "", interim = "";
+      for (const r of ev.results) (r.isFinal ? (fin += r[0].transcript) : (interim += r[0].transcript));
+      finalText = fin.trim();
+      input.value = before + (fin + interim).trim();
     };
     rec.onerror = (ev) => {
-      const msg = ev.error === "not-allowed" ? "Microphone access is blocked. Allow it in your browser's site settings." : ev.error === "no-speech" ? "Didn't hear anything. Tap the mic and try again." : `Voice input stopped (${ev.error}).`;
-      voiceStatus(msg, "err");
+      status(ev.error === "not-allowed" ? "Microphone access is blocked. Allow it in your browser's site settings."
+        : ev.error === "no-speech" ? "Didn't hear anything. Tap the mic and try again." : `Voice input stopped (${ev.error}).`, "err");
     };
     rec.onend = () => {
-      stop();
-      $("groceryInput").value = "";
-      if (finalText.trim()) handleSpoken(finalText.trim());
+      btn.classList.remove("listening");
+      rec = null;
+      if (finalText) onDone((before + finalText).trim());
     };
     btn.classList.add("listening");
     btn.classList.remove("nudge");
-    voiceStatus("Listening… say something like \"add milk, eggs and bread\".");
-    try { rec.start(); } catch { stop(); }
-  };
-  btn.addEventListener("click", start);
-  // Home-screen shortcut opens ./?voice=1
-  if (new URLSearchParams(location.search).get("voice")) {
-    document.querySelector(".groceries").scrollIntoView({ block: "center" });
-    btn.classList.add("nudge");
-    voiceStatus("Tap the mic and say what you need.");
-  }
+    status(prompt);
+    try { rec.start(); } catch { btn.classList.remove("listening"); rec = null; }
+  });
 }
-setupVoice();
+
+// Groceries: what you say is turned into list changes.
+attachMic({
+  btn: $("micBtn"), input: $("groceryInput"), status: voiceStatus,
+  prompt: "Listening… say something like \"add milk, eggs and bread\".",
+  onDone: (said) => { $("groceryInput").value = ""; handleSpoken(said); },
+});
+// Notes: what you say is posted as a note. Tap the mic again when you're done talking.
+attachMic({
+  btn: $("noteMicBtn"), input: $("noteInput"), status: noteStatus, long: true,
+  prompt: "Listening… say your note, then tap the mic again to post it.",
+  onDone: (said) => {
+    const text = said.replace(/^./, (c) => c.toUpperCase()).slice(0, 200);
+    S.store.add("notes", { text, at: Date.now(), by: S.store.who });
+    $("noteInput").value = "";
+    noteStatus(`Posted: "${text}"`, "ok");
+  },
+});
+// Home-screen shortcut opens ./?voice=1
+if (SpeechRec && new URLSearchParams(location.search).get("voice")) {
+  document.querySelector(".groceries").scrollIntoView({ block: "center" });
+  $("micBtn").classList.add("nudge");
+  voiceStatus("Tap the mic and say what you need.");
+}
 $("groceryList").addEventListener("click", (e) => {
   const li = e.target.closest("li[data-id]");
   if (!li) return;
@@ -984,6 +1008,32 @@ async function loadTraffic() {
   renderTraffic();
   renderAll();
 }
+// Street map (CARTO / OpenStreetMap) with TomTom's live traffic colors on top and the route drawn faintly.
+let tmap = null, tFlow = null, tLine = null;
+function drawTrafficMap(t) {
+  const el = $("trafficMap");
+  if (!window.L || !t?.down?.path?.length) { el.hidden = true; return; }
+  el.hidden = false;
+  const flowUrl = `${WORKER}/tile/{z}/{x}/{y}.png?t=${t.at}`;
+  if (!tmap) {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    tmap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, tap: false });
+    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
+      maxZoom: 18, subdomains: "abcd",
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a> · Traffic © TomTom',
+    }).addTo(tmap);
+    tFlow = L.tileLayer(flowUrl, { maxZoom: 18, opacity: 0.95 }).addTo(tmap);
+    L.control.zoom({ position: "topright" }).addTo(tmap);
+    for (const p of [TR.from, TR.to]) {
+      L.circleMarker([p.lat, p.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#2f5d50", fillOpacity: 1 })
+        .bindTooltip(p.name, { direction: "top", offset: [0, -6] }).addTo(tmap);
+    }
+  } else tFlow.setUrl(flowUrl);
+  if (tLine) tLine.remove();
+  tLine = L.polyline(t.down.path, { color: "#4a7a9c", weight: 10, opacity: 0.22, interactive: false }).addTo(tmap);
+  if (!tmap.fitted) { tmap.invalidateSize(); tmap.fitBounds(tLine.getBounds(), { padding: [14, 14] }); tmap.fitted = true; }
+}
+
 function renderTraffic() {
   const body = $("trafficBody");
   const snowy = (S.weather?.daily?.snowfall_sum?.[0] || 0) >= 0.3 || [71, 73, 75, 77, 85, 86].includes(S.weather?.current?.weather_code);
@@ -1001,6 +1051,7 @@ function renderTraffic() {
   const closed = t.incidents.some((i) => i.closed);
   const worst = [t.down, t.up].filter(Boolean).sort((a, b) => b.delay - a.delay)[0];
   setTag("trafficTag", trafficLevel(worst, closed));
+  try { drawTrafficMap(t); } catch (e) { console.warn("Map failed", e); $("trafficMap").hidden = true; }
   const row = (label, r) => {
     if (!r) return "";
     const [lvl, cls] = trafficLevel(r, false);

@@ -11,8 +11,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="styles.css?v=10">
-  <script src="config.js?v=10"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="styles.css?v=11">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="config.js?v=11"></script>
 </head>
 <body>
   <div class="wrap">
@@ -56,6 +58,7 @@
       <!-- Traffic -->
       <article class="card traffic">
         <div class="card-head"><h2 id="trafficTitle">Ute Pass traffic</h2><span class="tag" id="trafficTag"></span></div>
+        <div class="traffic-map" id="trafficMap" hidden role="img" aria-label="Map of the drive with live traffic colors"></div>
         <div id="trafficBody"></div>
         <div class="link-row">
           <a id="trafficMapLink" target="_blank" rel="noopener">Google Maps</a>
@@ -159,8 +162,12 @@
         <form class="add-row" id="noteForm" autocomplete="off">
           <label class="sr" for="noteInput">Write a note</label>
           <input id="noteInput" placeholder="Leave a note for the household" maxlength="200">
+          <button class="mic" type="button" id="noteMicBtn" hidden aria-label="Say a note" title="Say a note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
           <button class="primary" type="submit">Post</button>
         </form>
+        <p class="voice-status small" id="noteVoiceStatus" hidden></p>
         <ul class="notes-list" id="noteList"></ul>
       </article>
     </main>
@@ -181,6 +188,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=10"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>
