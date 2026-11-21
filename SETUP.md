@@ -180,6 +180,12 @@ The panel then shows:
 
 Big delays and closures also appear in the strip at the top. **Google Maps** opens the route with live traffic, and **COtrip** opens CDOT's official road conditions map. To watch a different drive, change `traffic` in `config.js`.
 
+## 9. Wall view (for a screen that's always on)
+
+Click **Wall view** in the top-right corner to fit everything on one screen with no scrolling. It's laid out for a 1920×1080 screen and scales to other sizes. It shows a large clock, and the screen stays awake while it's open. **Full screen** hides the browser's toolbars, and **Scroll view** switches back.
+
+Each device remembers its own choice, so your phone can stay on the scrolling view while the wall screen stays on the wall view. To open the wall view without changing a device's saved choice, use https://rego85.github.io/home-base/#wall.
+
 ## How each card works
 
 - **Bins:** The card only appears on garbage night (Sunday). It fills the top row with a glowing highlight and says *Put the bins out tonight*. If gusts of 30 mph or more are forecast overnight, it warns you to weigh down the lids. Tapping **Bins are out** marks it done for everyone and turns the highlight off.
