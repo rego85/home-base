@@ -188,7 +188,7 @@ Each device remembers its own choice, so your phone can stay on the scrolling vi
 
 ## How each card works
 
-- **Bins:** The card only appears on garbage night (Sunday). It fills the top row with a glowing highlight and says *Put the bins out tonight*. If gusts of 30 mph or more are forecast overnight, it warns you to weigh down the lids. Tapping **Bins are out** marks it done for everyone and turns the highlight off.
+- **Bins:** The card only appears on garbage night (Sunday). It says whether it's **trash only** or **trash + recycling**. Trash goes every week, and recycling every other week, counting from the Nov 30, 2026 pickup. If the schedule changes, edit `recycling` in `config.js`. It fills the top row with a glowing highlight and says *Put the bins out tonight*. If gusts of 30 mph or more are forecast overnight, it warns you to weigh down the lids. Tapping **Bins are out** marks it done for everyone and turns the highlight off.
 - **Yard work:** It compares the forecast for Saturday and Sunday (rain chance, snow, cold, wind) and marks the better day. Tap **Mark done** once it's done that weekend. The status resets the next weekend.
 - **Weather alerts:** Official National Weather Service alerts, plus Home Base's own warnings for high wind, heavy snow, frost (May–October), bitter cold and thunderstorms.
 - **Chores:** Each chore has an interval. Tapping **Done** starts the countdown over and records who did it.
