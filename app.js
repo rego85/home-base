@@ -760,7 +760,10 @@ async function extractBills(emails) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);
       return { bills: data.bills, by: "Claude" };
-    } catch (e) { console.warn("Claude bill extraction failed, using the built-in reader", e); }
+    } catch (e) {
+      console.warn("Claude bill extraction failed, using the built-in reader", e);
+      return { bills: emails.map(guessBill), by: "", claudeError: String(e.message || e) };
+    }
   }
   return { bills: emails.map(guessBill), by: "" };
 }
@@ -774,7 +777,7 @@ async function scanAccount(account) {
   if (!ids.length) return { account, checked: 0, found: 0, by: "" };
   billsMeta(`Reading ${ids.length} new email${ids.length > 1 ? "s" : ""} from ${account}…`);
   const emails = await mapLimit(ids, 3, (id) => fetchEmail(account, id));
-  const { bills, by } = await extractBills(emails);
+  const { bills, by, claudeError } = await extractBills(emails);
   const byId = Object.fromEntries(emails.map((e) => [e.id, e]));
   let found = 0;
   for (const b of bills) {
@@ -794,7 +797,7 @@ async function scanAccount(account) {
     if (b.kind === "bill") found++;
     S.store.add("bills", rec);
   }
-  return { account, checked: emails.length, found, by };
+  return { account, checked: emails.length, found, by, claudeError };
 }
 
 let scanning = false;
@@ -830,6 +833,8 @@ async function scanBills(only = "", addNew = false) {
     let msg = checked
       ? `Checked ${checked} new email${checked > 1 ? "s" : ""}${by ? ` with ${by}` : ""} in ${results.length} account${results.length > 1 ? "s" : ""}. Found ${found} new bill${found === 1 ? "" : "s"}.`
       : `No new bill emails in ${results.map((r) => r.account).join(" or ")}.`;
+    const cErr = results.find((r) => r.claudeError)?.claudeError;
+    if (cErr) msg += ` Claude couldn't read them (${cErr}), so the built-in reader was used.`;
     if (waiting.length) msg += ` Tap Check Gmail again to check ${waiting.join(" and ")}.`;
     billsMeta(msg);
   } catch (e) {
