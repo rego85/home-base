@@ -470,6 +470,6 @@ html.wall #binsCard .card-head { flex: none; }
 html.wall #binsCard .big { font-size: 1.7rem; }
 html.wall #binsCard button { margin: 0 0 0 auto; font-size: 1.05rem; }
 /* Wall view: keep the two tightest cards from clipping mid-line. */
-html.wall .headlines li:nth-child(n+3) { display: none; }
+html.wall .headlines li:nth-child(n+2) { display: none; }
 html.wall #yardDetail { display: none; }
 html.wall #yardCard .big { font-size: 1.2rem; }
