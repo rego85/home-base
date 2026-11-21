@@ -1016,11 +1016,11 @@ function drawTrafficMap(t) {
   el.hidden = false;
   const flowUrl = `${WORKER}/tile/{z}/{x}/{y}.png?t=${t.at}`;
   if (!tmap) {
-    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
     tmap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, tap: false });
-    L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-      maxZoom: 18, subdomains: "abcd",
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a> · Traffic © TomTom',
+    // OpenStreetMap's free map; in dark mode CSS inverts it (see .base-tiles in styles.css).
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, className: "base-tiles",
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Traffic © TomTom',
     }).addTo(tmap);
     tFlow = L.tileLayer(flowUrl, { maxZoom: 18, opacity: 0.95 }).addTo(tmap);
     L.control.zoom({ position: "topright" }).addTo(tmap);
