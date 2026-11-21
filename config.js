@@ -12,6 +12,10 @@ window.DASH_CONFIG = {
   // Garbage night. 0 = Sunday, 1 = Monday ... 6 = Saturday. Pickup is the next morning.
   binsNight: 0,
 
+  // Recycling: the date of any recycling pickup morning, and how often it comes.
+  // Trash goes out every week; recycling joins it every `everyWeeks` weeks.
+  recycling: { pickupDate: "2026-11-30", everyWeeks: 2 },
+
   // Optional: Google Calendar embed link (see SETUP.md, step 5).
   // Example: "https://calendar.google.com/calendar/embed?src=YOUR_CALENDAR_ID&ctz=America%2FDenver"
   calendarEmbedUrl: "",

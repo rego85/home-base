@@ -473,3 +473,19 @@ html.wall #binsCard button { margin: 0 0 0 auto; font-size: 1.05rem; }
 html.wall .headlines li:nth-child(n+2) { display: none; }
 html.wall #yardDetail { display: none; }
 html.wall #yardCard .big { font-size: 1.2rem; }
+
+/* Bins: which bins go out this week */
+.bin-pills { display: flex; gap: .5rem; flex-wrap: wrap; }
+.bin {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .8rem; border-radius: 999px;
+  font-weight: 700; font-size: .95rem; border: 2px solid transparent;
+}
+.bin::before { content: ""; width: .7rem; height: .7rem; border-radius: 3px; background: currentColor; }
+.bin.trash.on { background: var(--card-2); color: var(--ink); border-color: var(--muted); }
+.bin.recycle.on { background: #dbe8f5; color: #1f5b96; border-color: #1f5b96; }
+.bin.recycle.off { background: transparent; color: var(--muted); border: 2px dashed var(--line); text-decoration: line-through; text-decoration-thickness: 1px; }
+.bin.recycle.off::before { opacity: .4; }
+@media (prefers-color-scheme: dark) {
+  .bin.recycle.on { background: #1c3550; color: #9cc7f0; border-color: #9cc7f0; }
+}
+html.wall #binsCard .bin-pills { flex: none; }

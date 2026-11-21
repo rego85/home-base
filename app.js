@@ -312,6 +312,14 @@ function renderWeather() {
 }
 
 /* ---------- bins ---------- */
+// Is recycling picked up on this pickup morning? Counts whole weeks from the known recycling date.
+function isRecyclingPickup(pickupDay) {
+  const r = CFG.recycling;
+  if (!r?.pickupDate) return false;
+  const weeks = Math.round(daysBetween(parseYmd(r.pickupDate), pickupDay) / 7);
+  const every = Number(r.everyWeeks) || 1;
+  return ((weeks % every) + every) % every === 0;
+}
 function binsState(now = new Date()) {
   const night = CFG.binsNight ?? 0;
   const dow = now.getDay();
@@ -319,17 +327,25 @@ function binsState(now = new Date()) {
   const st = S.status;
   if (dow === night) {
     const done = st.binsOut === key;
+    const pickup = addDays(startOfDay(now), 1);
+    const recycle = isRecyclingPickup(pickup);
+    let nextRecycle = null;
+    for (let k = 1; !recycle && k <= 8 && !nextRecycle; k++) if (isRecyclingPickup(addDays(pickup, 7 * k))) nextRecycle = addDays(startOfDay(now), 7 * k);
+    const which = recycle ? "trash and recycling" : "trash only";
+    const recycleNote = recycle ? "Recycling is picked up too this week."
+      : `Not recycling. That goes out ${nextRecycle ? `${DAY_NAMES[night]} ${fmtDay(nextRecycle, { month: "short", day: "numeric" })}` : "another week"}.`;
     let wind = "";
     const h = S.weather?.hourly;
     if (h) {
       const from = `${key}T18:00`, to = `${ymd(addDays(now, 1))}T08:00`;
       const g = h.time.map((t, i) => (t >= from && t <= to ? h.wind_gusts_10m[i] : 0));
       const max = Math.max(0, ...g);
-      if (max >= 30) wind = `Gusts up to ${Math.round(max)} mph tonight. Weigh down the lids.`;
+      if (max >= 30) wind = ` Gusts up to ${Math.round(max)} mph tonight. Weigh down the lids.`;
     }
+    const bins = { trash: true, recycle };
     return done
-      ? { title: "Bins are out", detail: "Pickup is tomorrow morning.", tag: ["Done", "good"], btn: "Undo", act: () => S.store.setStatus({ binsOut: "" }), chip: null }
-      : { title: "Put the bins out tonight", detail: wind || "Pickup is tomorrow morning.", tag: ["Tonight", "warn"], btn: "Bins are out", act: () => S.store.setStatus({ binsOut: key }), chip: ["Bins go out tonight", "warn"], urgent: true };
+      ? { title: recycle ? "Trash and recycling are out" : "Trash is out", detail: "Pickup is tomorrow morning.", tag: ["Done", "good"], btn: "Undo", act: () => S.store.setStatus({ binsOut: "" }), chip: null, bins }
+      : { title: recycle ? "Trash + recycling out tonight" : "Trash out tonight", detail: recycleNote + wind, tag: [recycle ? "Both bins" : "Trash only", "warn"], btn: recycle ? "Both bins are out" : "Trash is out", act: () => S.store.setStatus({ binsOut: key }), chip: [`Bins tonight: ${which}`, "warn"], urgent: true, bins };
   }
   return null; // The bins panel only appears on garbage night.
 }
@@ -341,6 +357,9 @@ function renderBins() {
   $("binsCard").classList.toggle("urgent", !!b.urgent);
   $("binsTitle").textContent = b.title;
   $("binsDetail").textContent = b.detail;
+  $("binPills").innerHTML = `
+    <span class="bin trash on">Trash</span>
+    <span class="bin recycle ${b.bins.recycle ? "on" : "off"}">Recycling${b.bins.recycle ? "" : ": not this week"}</span>`;
   setTag("binsTag", b.tag);
   setBtn("binsBtn", b);
   return b;

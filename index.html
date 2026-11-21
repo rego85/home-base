@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=16">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=15"></script>
+  <script src="config.js?v=16"></script>
 </head>
 <body>
   <div class="wrap">
@@ -85,6 +85,7 @@
       <article class="card status-card" id="binsCard" hidden>
         <div class="card-head"><h2>Garbage bins</h2><span class="tag" id="binsTag"></span></div>
         <p class="big" id="binsTitle">—</p>
+        <div class="bin-pills" id="binPills"></div>
         <p class="muted" id="binsDetail"></p>
         <button class="primary" id="binsBtn" hidden></button>
       </article>
@@ -191,6 +192,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=15"></script>
+  <script type="module" src="app.js?v=16"></script>
 </body>
 </html>
