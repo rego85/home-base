@@ -1380,6 +1380,18 @@ function tickClock() {
   $("clock").textContent = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 $("viewBtn").addEventListener("click", () => setView(!document.documentElement.classList.contains("wall")));
+// Refresh: ask for a newer app version, then reload. Screens that stay open (like the frame) never
+// navigate on their own, so this is how they pick up a pushed update.
+$("refreshBtn").addEventListener("click", async () => {
+  const btn = $("refreshBtn");
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await Promise.race([reg?.update(), new Promise((r) => setTimeout(r, 4000))]);
+  } catch { /* offline or no service worker: reload anyway */ }
+  location.reload();
+});
 $("fullscreenBtn").addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   else document.documentElement.requestFullscreen().catch(() => {});
