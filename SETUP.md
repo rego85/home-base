@@ -186,6 +186,12 @@ Click **Wall view** in the top-right corner to fit everything on one screen with
 
 Each device remembers its own choice, so your phone can stay on the scrolling view while the wall screen stays on the wall view. To open the wall view without changing a device's saved choice, use https://rego85.github.io/home-base/#wall.
 
+## 10. Second person, panel settings and commute places
+
+- **A second person:** add their Gmail address to the Firestore rules and to the worker's `ALLOWED_EMAILS` (Cloudflare). When they sign in with their own Google account, what they add shows their name. Google's sign-in always shows the account picker, so each person can choose their own account on a shared screen.
+- **Settings → Panels:** each person chooses which panels they see. The choice is saved to their account, so it follows them to every device. Tick **Use different panels on this device only** to give one screen, like the wall display, its own set. When a panel is off, the panels next to it grow into its space.
+- **Settings → Commute places:** the arrows on the commute card flip through Ute Pass (Colorado Springs), Bear Creek Dog Park, Denver, and any places you add. Added places are looked up with OpenStreetMap's free address search and saved in your private database, never in this public code. The Today strip still warns about Ute Pass delays whichever place is showing.
+
 ## How each card works
 
 - **Bins:** The card only appears on garbage night (Sunday). It says whether it's **trash only** or **trash + recycling**. Trash goes every week, and recycling every other week, counting from the Nov 30, 2026 pickup. If the schedule changes, edit `recycling` in `config.js`. It fills the top row with a glowing highlight and says *Put the bins out tonight*. If gusts of 30 mph or more are forecast overnight, it warns you to weigh down the lids. Tapping **Bins are out** marks it done for everyone and turns the highlight off.
