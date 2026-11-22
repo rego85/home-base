@@ -12,9 +12,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="styles.css?v=18">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=17"></script>
+  <script src="config.js?v=18"></script>
 </head>
 <body>
   <div class="wrap">
@@ -27,6 +27,7 @@
         <span class="clock" id="clock" aria-live="off"></span>
         <span class="sync-pill" id="syncPill" title="Where your lists are saved">This device</span>
         <button class="ghost small" id="fullscreenBtn" hidden>Full screen</button>
+        <button class="ghost small" id="settingsBtn" title="Choose which panels you see and manage commute places">Settings</button>
         <button class="ghost small" id="viewBtn" title="Switch between the scrolling view and a one-screen wall view">Wall view</button>
         <button class="ghost small" id="signOutBtn" hidden>Sign out</button>
       </div>
@@ -60,7 +61,15 @@
 
       <!-- Traffic -->
       <article class="card traffic">
-        <div class="card-head"><h2 id="trafficTitle">Ute Pass traffic</h2><span class="tag" id="trafficTag"></span></div>
+        <div class="card-head commute-head">
+          <div class="commute-nav">
+            <button class="arrow" id="commutePrev" aria-label="Previous place">‹</button>
+            <h2 id="trafficTitle">Ute Pass</h2>
+            <button class="arrow" id="commuteNext" aria-label="Next place">›</button>
+            <span class="muted small" id="commuteCount"></span>
+          </div>
+          <span class="tag" id="trafficTag"></span>
+        </div>
         <div class="traffic-map" id="trafficMap" hidden role="img" aria-label="Map of the drive with live traffic colors"></div>
         <div id="trafficBody"></div>
         <div class="link-row">
@@ -182,6 +191,33 @@
     </footer>
   </div>
 
+  <!-- Settings -->
+  <dialog id="settings" class="settings">
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <form method="dialog"><button class="ghost small" value="close">Done</button></form>
+    </div>
+    <section>
+      <h3>Panels</h3>
+      <p class="muted small" id="panelScope"></p>
+      <div class="toggles" id="panelToggles"></div>
+      <label class="check device-only"><input type="checkbox" id="deviceOnly"> Use different panels on this device only (for example, the wall screen)</label>
+    </section>
+    <section>
+      <h3>Commute places</h3>
+      <p class="muted small">Places the arrows on the commute card flip through. Addresses you add are saved privately in your household's database.</p>
+      <ul class="place-list" id="placeList"></ul>
+      <form id="placeForm" class="place-form" autocomplete="off">
+        <label class="sr" for="placeName">Place name</label>
+        <input id="placeName" placeholder="Name, like Friend's house" maxlength="40">
+        <label class="sr" for="placeAddr">Address</label>
+        <input id="placeAddr" placeholder="Street address, city, state" maxlength="120">
+        <button class="primary" type="submit">Add place</button>
+      </form>
+      <p class="small muted" id="placeStatus"></p>
+    </section>
+  </dialog>
+
   <!-- Sign-in screen (Firebase mode only) -->
   <div class="signin" id="signin" hidden>
     <div class="signin-box card">
@@ -192,6 +228,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=17"></script>
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>

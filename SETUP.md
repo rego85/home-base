@@ -193,3 +193,7 @@ Each device remembers its own choice, so your phone can stay on the scrolling vi
 - **Weather alerts:** Official National Weather Service alerts, plus Home Base's own warnings for high wind, heavy snow, frost (May–October), bitter cold and thunderstorms.
 - **Chores:** Each chore has an interval. Tapping **Done** starts the countdown over and records who did it.
 - **Groceries:** Add several items at once with commas, for example `milk, eggs, bread`. Check items off at the store, then tap **Clear checked items**.
+
+## Planned (not built yet)
+
+- **Walmart grocery link:** connect the grocery list to Walmart, so items on the list can be added to a Walmart cart or order. Noted on Nov 22, 2026, to build later.

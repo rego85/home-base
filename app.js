@@ -24,7 +24,19 @@ const ago = (ms) => {
 };
 
 /* ---------- state ---------- */
-const S = { store: null, weather: null, alerts: [], loc: null, status: {}, groceries: [], notes: [], chores: [], bills: [], loaded: {} };
+const S = { store: null, weather: null, alerts: [], loc: null, status: {}, prefs: {}, groceries: [], notes: [], chores: [], bills: [], loaded: {} };
+
+/* ---------- panels people can turn on or off ---------- */
+const PANELS = [
+  ["weather", "Weather", ".weather"], ["moon", "Moon", ".moon"], ["traffic", "Commute", ".traffic"],
+  ["news", "Top story", ".news"], ["bins", "Garbage bins (Sundays)", "#binsCard"], ["yard", "Yard work", "#yardCard"],
+  ["bills", "Upcoming bills", ".bills"], ["groceries", "Groceries", ".groceries"], ["chores", "Household chores", ".chores"],
+  ["notes", "Notes & reminders", ".notes"], ["calendar", "Calendar", ".calendar"],
+];
+// A device can keep its own list (e.g. the wall screen); otherwise the signed-in person's list applies.
+function deviceHidden() { try { const v = localStorage.getItem("hb:devicePanels"); return v ? JSON.parse(v) : null; } catch { return null; } }
+const hiddenPanels = () => deviceHidden() || S.prefs.hiddenPanels || [];
+const isOn = (key) => !hiddenPanels().includes(key);
 
 /* ---------- storage: this device only ---------- */
 function localStore() {
@@ -42,6 +54,8 @@ function localStore() {
     removeMany(c, ids) { const set = new Set(ids); write(c, read(c).filter((x) => !set.has(x.id))); },
     watchStatus(cb) { this.watch("status", cb); },
     setStatus(p) { write("status", { ...read("status"), ...p }); },
+    watchPrefs(cb) { (subs.prefs ||= []).push(cb); cb(read("prefs")); },
+    setPrefs(p) { write("prefs", { ...read("prefs"), ...p }); },
   };
 }
 
@@ -65,6 +79,7 @@ async function firebaseStore(fbCfg) {
     });
     $("signInBtn").onclick = async () => {
       const provider = new A.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" }); // lets each person pick their own account
       try { await A.signInWithPopup(auth, provider); }
       catch (e) {
         if (/popup/.test(e.code || "")) A.signInWithRedirect(auth, provider);
@@ -102,6 +117,9 @@ async function firebaseStore(fbCfg) {
       }, onErr);
     },
     setStatus(p) { return F.setDoc(F.doc(db, `${base}/meta/status`), p, { merge: true }).catch(onErr); },
+    // Each person's own settings (which panels they see), synced across their devices.
+    watchPrefs(cb) { F.onSnapshot(F.doc(db, `${base}/prefs/${user.uid}`), (snap) => cb(snap.data() || {}), onErr); },
+    setPrefs(p) { return F.setDoc(F.doc(db, `${base}/prefs/${user.uid}`), p, { merge: true }).catch(onErr); },
   };
 }
 function showSignInError(e) {
@@ -350,7 +368,7 @@ function binsState(now = new Date()) {
   return null; // The bins panel only appears on garbage night.
 }
 function renderBins() {
-  const b = binsState();
+  const b = isOn("bins") ? binsState() : null;
   $("binsCard").hidden = !b;
   document.querySelector(".grid").classList.toggle("show-bins", !!b);
   if (!b) return { chip: null };
@@ -995,14 +1013,35 @@ function renderCalendar() {
 
 /* ---------- traffic ---------- */
 const WORKER = (CFG.workerUrl || "").replace(/\/+$/, "");
-const TR = CFG.traffic || {
-  name: "Ute Pass", road: "US-24",
-  from: { name: "Woodland Park", lat: 38.9939, lon: -105.0569 },
-  to: { name: "Colorado Springs", lat: 38.8339, lon: -104.8214 },
-};
+const TR = CFG.traffic || {};
+TR.road ||= "US-24";
+TR.from ||= { name: "Woodland Park", lat: 38.9939, lon: -105.0569 };
+// Older config files had a single `to`; newer ones list several destinations.
+const BUILTIN_DEST = TR.destinations || [TR.to ? { title: TR.name, ...TR.to } : { name: "Colorado Springs", title: "Ute Pass", lat: 38.8339, lon: -104.8214 }];
 const ll = (p) => `${p.lat},${p.lon}`;
-$("trafficTitle").textContent = `${TR.name} traffic`;
-$("trafficMapLink").href = `https://www.google.com/maps/dir/?api=1&origin=${ll(TR.from)}&destination=${ll(TR.to)}&travelmode=driving`;
+S.places = [];
+S.trafficBy = {};
+const destinations = () => [...BUILTIN_DEST, ...[...S.places].sort((a, b) => (a.at || 0) - (b.at || 0))];
+let commuteKey = "";
+try { commuteKey = localStorage.getItem("hb:commute") || ""; } catch {}
+function currentDest() {
+  const list = destinations();
+  return list.find((d) => ll(d) === commuteKey) || list[0];
+}
+const destTitle = (d) => d.title || d.name;
+function stepCommute(dir) {
+  const list = destinations();
+  const i = Math.max(0, list.findIndex((d) => ll(d) === ll(currentDest())));
+  const next = list[(i + dir + list.length) % list.length];
+  commuteKey = ll(next);
+  try { localStorage.setItem("hb:commute", commuteKey); } catch {}
+  if (tmap) tmap.fitted = false;
+  const cached = S.trafficBy[commuteKey];
+  renderTraffic();
+  if (!cached || Date.now() - cached.at > 5 * 60000) loadTraffic(next);
+}
+$("commutePrev").addEventListener("click", () => stepCommute(-1));
+$("commuteNext").addEventListener("click", () => stepCommute(1));
 
 function trafficLevel(r, closed) {
   if (closed) return ["Closed", "bad"];
@@ -1011,25 +1050,35 @@ function trafficLevel(r, closed) {
   if (r.delay >= 3) return [`+${r.delay} min`, "warn"];
   return ["Clear", "good"];
 }
-async function loadTraffic() {
-  if (!WORKER) return renderTraffic();
+// Loads drive times for one destination (the one on screen by default).
+const trafficTried = {}; // key -> time of the last attempt, so a failing place isn't retried in a loop
+async function loadTraffic(dest = currentDest()) {
+  if (!WORKER || !dest) return renderTraffic();
+  const key = ll(dest);
+  trafficTried[key] = Date.now();
   try {
-    const q = new URLSearchParams({ from: ll(TR.from), to: ll(TR.to), road: TR.road });
+    const q = new URLSearchParams({ from: ll(TR.from), to: key, road: TR.road });
     const res = await fetch(`${WORKER}/traffic?${q}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.status);
-    S.traffic = data;
+    S.trafficBy[key] = data;
     S.trafficError = "";
   } catch (e) {
     console.warn("Traffic failed", e);
     S.trafficError = e.message || "Couldn't load traffic.";
   }
+  S.traffic = S.trafficBy[ll(BUILTIN_DEST[0])] || null; // the Today strip watches the main commute
   renderTraffic();
   renderAll();
 }
+// Refreshes what's on screen, plus the main commute for the Today strip.
+function refreshTraffic() {
+  loadTraffic();
+  if (ll(currentDest()) !== ll(BUILTIN_DEST[0])) loadTraffic(BUILTIN_DEST[0]);
+}
 // Street map (CARTO / OpenStreetMap) with TomTom's live traffic colors on top and the route drawn faintly.
-let tmap = null, tFlow = null, tLine = null;
-function drawTrafficMap(t) {
+let tmap = null, tFlow = null, tLine = null, tMarkers = null;
+function drawTrafficMap(t, dest) {
   const el = $("trafficMap");
   if (!window.L || !t?.down?.path?.length) { el.hidden = true; return; }
   el.hidden = false;
@@ -1043,11 +1092,13 @@ function drawTrafficMap(t) {
     }).addTo(tmap);
     tFlow = L.tileLayer(flowUrl, { maxZoom: 18, opacity: 0.95 }).addTo(tmap);
     L.control.zoom({ position: "topright" }).addTo(tmap);
-    for (const p of [TR.from, TR.to]) {
-      L.circleMarker([p.lat, p.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#2f5d50", fillOpacity: 1 })
-        .bindTooltip(p.name, { direction: "top", offset: [0, -6] }).addTo(tmap);
-    }
+    tMarkers = L.layerGroup().addTo(tmap);
   } else tFlow.setUrl(flowUrl);
+  tMarkers.clearLayers();
+  for (const p of [TR.from, dest]) {
+    L.circleMarker([p.lat, p.lon], { radius: 6, color: "#fff", weight: 2, fillColor: "#2f5d50", fillOpacity: 1 })
+      .bindTooltip(p.name, { direction: "top", offset: [0, -6] }).addTo(tMarkers);
+  }
   if (tLine) tLine.remove();
   tLine = L.polyline(t.down.path, { color: "#4a7a9c", weight: 10, opacity: 0.22, interactive: false }).addTo(tmap);
   if (!tmap.fitted) { tmap.invalidateSize(); tmap.fitBounds(tLine.getBounds(), { padding: [14, 14] }); tmap.fitted = true; }
@@ -1062,15 +1113,25 @@ function renderTraffic() {
     body.innerHTML = `${snowNote}<p class="cal-empty">Live drive times will show here once the Home Base worker is set up. SETUP.md, step 8, shows how. Until then, the links below open live traffic.</p>`;
     return;
   }
-  const t = S.traffic;
+  const dest = currentDest();
+  const list = destinations();
+  $("trafficTitle").textContent = destTitle(dest);
+  $("commuteCount").textContent = list.length > 1 ? `${list.findIndex((d) => ll(d) === ll(dest)) + 1} of ${list.length}` : "";
+  $("commutePrev").hidden = $("commuteNext").hidden = list.length < 2;
+  $("trafficMapLink").href = `https://www.google.com/maps/dir/?api=1&origin=${ll(TR.from)}&destination=${ll(dest)}&travelmode=driving`;
+  const t = S.trafficBy[ll(dest)];
   if (!t) {
-    body.innerHTML = S.trafficError ? `<p class="error small">${esc(S.trafficError)}</p>` : `<p class="muted">Checking the pass…</p>`;
+    // e.g. a saved place that loaded after start-up: fetch it, at most once a minute
+    if (Date.now() - (trafficTried[ll(dest)] || 0) > 60000) setTimeout(() => loadTraffic(dest), 0);
+    setTag("trafficTag", ["", ""]);
+    $("trafficMap").hidden = true;
+    body.innerHTML = S.trafficError ? `<p class="error small">${esc(S.trafficError)}</p>` : `<p class="muted">Checking the drive to ${esc(dest.name)}…</p>`;
     return;
   }
   const closed = t.incidents.some((i) => i.closed);
   const worst = [t.down, t.up].filter(Boolean).sort((a, b) => b.delay - a.delay)[0];
   setTag("trafficTag", trafficLevel(worst, closed));
-  try { drawTrafficMap(t); } catch (e) { console.warn("Map failed", e); $("trafficMap").hidden = true; }
+  try { drawTrafficMap(t, dest); } catch (e) { console.warn("Map failed", e); $("trafficMap").hidden = true; }
   const row = (label, r) => {
     if (!r) return "";
     const [lvl, cls] = trafficLevel(r, false);
@@ -1084,17 +1145,18 @@ function renderTraffic() {
       <span class="muted small">${esc(i.where || i.text)}${i.where && i.text ? ` (${esc(i.text)})` : ""}</span>
     </li>`).join("");
   body.innerHTML = `${snowNote}
-    ${row(`Down to ${TR.to.name}`, t.down)}
-    ${row(`Up to ${TR.from.name}`, t.up)}
+    ${row(`To ${dest.name}`, t.down)}
+    ${row(`Back to ${TR.from.name}`, t.up)}
     ${incidents ? `<ul class="incidents">${incidents}</ul>` : `<p class="muted small">No crashes, closures or roadwork reported on ${esc(t.road)}.</p>`}
     <p class="muted small">Updated ${esc(ago(t.at))}${S.trafficError ? ". Last refresh failed" : ""}.</p>`;
 }
 function trafficChip() {
   const t = S.traffic;
   if (!t) return null;
-  if (t.incidents.some((i) => i.closed)) return [`${TR.name} closure reported`, "bad"];
+  const name = destTitle(BUILTIN_DEST[0]);
+  if (t.incidents.some((i) => i.closed)) return [`${name} closure reported`, "bad"];
   const worst = Math.max(t.down?.delay || 0, t.up?.delay || 0);
-  return worst >= 10 ? [`${TR.name}: +${worst} min delays`, "warn"] : null;
+  return worst >= 10 ? [`${name}: +${worst} min delays`, "warn"] : null;
 }
 
 /* ---------- news ---------- */
@@ -1156,21 +1218,21 @@ function renderHeader() {
 }
 function renderToday(bins, yard, moon, dueChores, bills = []) {
   const chips = [];
-  allAlerts().forEach((a) => chips.push([a.title, a.severe ? "bad" : "warn"]));
-  bills.filter((b) => b.dueDate && billDue(b).days <= 2).forEach((b) => {
+  if (isOn("weather")) allAlerts().forEach((a) => chips.push([a.title, a.severe ? "bad" : "warn"]));
+  if (isOn("bills")) bills.filter((b) => b.dueDate && billDue(b).days <= 2).forEach((b) => {
     const d = billDue(b);
     chips.push([`${b.payee} ${money(b.amount)} ${d.text.replace(/^(Due|Was)/, (w) => w.toLowerCase())}${b.autopay ? " (autopay)" : ""}`.replace(/\s+/g, " "), d.days <= 0 ? "bad" : "warn"]);
   });
-  if (bins.chip) chips.push(bins.chip);
-  const tc = trafficChip();
+  if (bins.chip && isOn("bins")) chips.push(bins.chip);
+  const tc = isOn("traffic") && trafficChip();
   if (tc) chips.push(tc);
-  if (yard.chip) chips.push(yard.chip);
-  if (dueChores) chips.push([`${dueChores} chore${dueChores > 1 ? "s" : ""} due`, "warn"]);
+  if (yard.chip && isOn("yard")) chips.push(yard.chip);
+  if (dueChores && isOn("chores")) chips.push([`${dueChores} chore${dueChores > 1 ? "s" : ""} due`, "warn"]);
   const open = S.groceries.filter((g) => !g.done).length;
-  if (open) chips.push([`${open} item${open > 1 ? "s" : ""} on the grocery list`, "info"]);
+  if (open && isOn("groceries")) chips.push([`${open} item${open > 1 ? "s" : ""} on the grocery list`, "info"]);
   const dFull = daysBetween(new Date(), moon.nextFull);
-  if (moon.name === "Full Moon") chips.push(["Full moon tonight", "info"]);
-  else if (dFull === 1) chips.push(["Full moon tomorrow", "info"]);
+  if (isOn("moon") && moon.name === "Full Moon") chips.push(["Full moon tonight", "info"]);
+  else if (isOn("moon") && dFull === 1) chips.push(["Full moon tomorrow", "info"]);
   if (!chips.length) chips.push(["Nothing needs doing today", "good"]);
   $("todayStrip").innerHTML = chips.map(([t, c]) => `<span class="chip ${c}"><span class="dot"></span>${esc(t)}</span>`).join("");
 }
@@ -1185,8 +1247,111 @@ function renderAll() {
   const due = renderChores();
   const bills = renderBills();
   renderNotes();
-  if (!S.traffic) renderTraffic(); // keeps the snow note current before live data arrives
+  renderTraffic(); // keeps the commute card and snow note current
   renderToday(bins, yard, moon, due, bills);
+  applyPanels();
+  if ($("settings").open) renderSettings();
+}
+
+/* ---------- hiding panels ---------- */
+// Hides turned-off panels, then lets neighbouring panels grow into the space they leave.
+function applyPanels() {
+  for (const [key, , sel] of PANELS) document.querySelector(sel)?.classList.toggle("panel-off", !isOn(key));
+  layoutGrid();
+}
+// Reads the current grid layout (whichever screen size or view applies) and gives each hidden panel's
+// cells to a neighbour that lines up with it exactly: above, below, left or right. Otherwise they stay empty.
+function layoutGrid() {
+  const grid = document.querySelector(".grid");
+  grid.style.gridTemplateAreas = "";
+  const hidden = new Set(PANELS.map(([k]) => k).filter((k) => !isOn(k)));
+  if (!hidden.size) return;
+  const rows = (getComputedStyle(grid).gridTemplateAreas.match(/"[^"]*"/g) || []).map((r) => r.slice(1, -1).trim().split(/\s+/));
+  if (!rows.length) return;
+  const cellsOf = (name) => rows.flatMap((r, y) => r.map((n, x) => (n === name ? [y, x] : null)).filter(Boolean));
+  const span = (cells, i) => [...new Set(cells.map((c) => c[i]))].sort((a, b) => a - b).join(",");
+  for (const name of hidden) {
+    const cells = cellsOf(name);
+    if (!cells.length) continue;
+    const ys = cells.map((c) => c[0]), xs = cells.map((c) => c[1]);
+    const [y0, y1, x0, x1] = [Math.min(...ys), Math.max(...ys), Math.min(...xs), Math.max(...xs)];
+    const candidates = [
+      [y0 - 1, x0, 1], [y1 + 1, x0, 1], // above / below: must cover the same columns
+      [y0, x0 - 1, 0], [y0, x1 + 1, 0], // left / right: must cover the same rows
+    ];
+    let taker = ".";
+    for (const [y, x, sameAxis] of candidates) {
+      const n = rows[y]?.[x];
+      if (!n || n === "." || hidden.has(n)) continue;
+      if (span(cellsOf(n), sameAxis) === span(cells, sameAxis)) { taker = n; break; }
+    }
+    for (const [y, x] of cells) rows[y][x] = taker;
+  }
+  grid.style.gridTemplateAreas = rows.map((r) => `"${r.join(" ")}"`).join(" ");
+}
+window.addEventListener("resize", () => layoutGrid());
+
+/* ---------- settings window ---------- */
+function renderSettings() {
+  const devOnly = !!deviceHidden();
+  $("deviceOnly").checked = devOnly;
+  $("panelToggles").innerHTML = PANELS.map(([key, label]) => `
+    <label class="check"><input type="checkbox" data-panel="${key}" ${isOn(key) ? "checked" : ""}> ${esc(label)}</label>`).join("");
+  $("panelScope").textContent = devOnly
+    ? "These choices apply to this device only."
+    : S.store?.mode === "firebase" ? `Saved to ${S.store.who || "your"}'s account, so they apply on all of your devices.` : "Saved on this device.";
+  const builtIn = BUILTIN_DEST.map((d) => `<li><span>${esc(destTitle(d))}${d.title ? ` <span class="muted small">(${esc(d.name)})</span>` : ""}</span><span class="muted small">Built in</span></li>`);
+  const saved = [...S.places].sort((a, b) => (a.at || 0) - (b.at || 0)).map((p) => `
+    <li><span>${esc(p.name)} <span class="muted small">${esc(p.address || "")}</span></span>
+    <button type="button" class="x" data-place="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">×</button></li>`);
+  $("placeList").innerHTML = [...builtIn, ...saved].join("");
+}
+function savePanels(hidden) {
+  if ($("deviceOnly").checked) { try { localStorage.setItem("hb:devicePanels", JSON.stringify(hidden)); } catch {} }
+  else S.store?.setPrefs({ hiddenPanels: hidden });
+  if (!$("deviceOnly").checked) S.prefs = { ...S.prefs, hiddenPanels: hidden };
+  renderAll();
+}
+$("settingsBtn").addEventListener("click", () => { renderSettings(); $("settings").showModal(); });
+$("panelToggles").addEventListener("change", () => {
+  const hidden = [...$("panelToggles").querySelectorAll("input[data-panel]")].filter((i) => !i.checked).map((i) => i.dataset.panel);
+  savePanels(hidden);
+  renderSettings();
+});
+$("deviceOnly").addEventListener("change", (e) => {
+  if (e.target.checked) { try { localStorage.setItem("hb:devicePanels", JSON.stringify(hiddenPanels())); } catch {} }
+  else { try { localStorage.removeItem("hb:devicePanels"); } catch {} }
+  renderAll();
+  renderSettings();
+});
+// Commute places: looked up with OpenStreetMap's free address search, then saved to the private database.
+$("placeForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("placeName").value.trim(), address = $("placeAddr").value.trim();
+  const status = (t, err) => { $("placeStatus").textContent = t; $("placeStatus").className = `small ${err ? "error" : "muted"}`; };
+  if (!name || !address) return status("Enter a name and an address.", true);
+  status("Looking up the address…");
+  try {
+    const q = new URLSearchParams({ q: address, format: "json", limit: "1", countrycodes: "us" });
+    const hit = (await (await fetch(`https://nominatim.openstreetmap.org/search?${q}`)).json())[0];
+    if (!hit) return status("Couldn't find that address. Try adding the city and state.", true);
+    await S.store.add("places", { name, address, lat: Math.round(Number(hit.lat) * 1e4) / 1e4, lon: Math.round(Number(hit.lon) * 1e4) / 1e4, at: Date.now(), by: S.store.who });
+    $("placeName").value = ""; $("placeAddr").value = "";
+    status(`Added ${name}. Use the arrows on the commute card to see it.`);
+  } catch { status("The address lookup didn't respond. Try again in a minute.", true); }
+});
+$("placeList").addEventListener("click", (e) => {
+  const id = e.target.dataset.place;
+  if (id) S.store.remove("places", id);
+});
+
+/* ---------- the Skylight frame ---------- */
+// The frame's launcher app adds "HomeBaseFrame/" to its browser name. It has no working microphone,
+// already runs full screen, and links would leave the dashboard, so those are hidden there.
+if (navigator.userAgent.includes("HomeBaseFrame/")) document.documentElement.classList.add("frame");
+// When a new version installs in the background, reload once so always-on screens pick it up.
+if (navigator.serviceWorker?.controller) {
+  navigator.serviceWorker.addEventListener("controllerchange", () => location.reload(), { once: true });
 }
 
 /* ---------- wall view (one screen, no scrolling) ---------- */
@@ -1206,6 +1371,7 @@ function setView(wall, remember = true) {
   $("fullscreenBtn").hidden = !wall || !document.fullscreenEnabled;
   if (remember) { try { localStorage.setItem("hb:view", wall ? "wall" : "scroll"); } catch {} }
   keepAwake(wall);
+  layoutGrid();
   if (tmap) setTimeout(() => { tmap.invalidateSize(); if (tLine) tmap.fitBounds(tLine.getBounds(), { padding: [14, 14] }); }, 50);
   if (!wall && document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
@@ -1255,20 +1421,21 @@ async function boot() {
   } else store = localStore();
   S.store = store;
   if (CFG.gmail?.clientId) loadGis().catch(() => {}); // preload so the sign-in popup opens straight from the tap
-  ["groceries", "notes", "chores", "bills"].forEach((c) => store.watch(c, (v) => { S[c] = v; S.loaded[c] = true; maybeSeed(); renderAll(); }));
+  ["groceries", "notes", "chores", "bills", "places"].forEach((c) => store.watch(c, (v) => { S[c] = v; S.loaded[c] = true; maybeSeed(); renderAll(); }));
   store.watchStatus((v) => { S.status = v; S.loaded.status = true; maybeSeed(); renderAll(); });
+  store.watchPrefs((v) => { S.prefs = v || {}; renderAll(); });
 
   loadWeather();
-  loadTraffic();
+  refreshTraffic();
   loadNews();
   setInterval(loadWeather, 30 * 60000);
-  setInterval(() => document.visibilityState === "visible" && loadTraffic(), 5 * 60000);
+  setInterval(() => document.visibilityState === "visible" && refreshTraffic(), 5 * 60000);
   setInterval(() => loadNews(true), 30 * 60000);
   setInterval(renderAll, 60000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     if (Date.now() - (S.weather?.fetchedAt || 0) > 15 * 60000) loadWeather();
-    if (Date.now() - (S.traffic?.at || 0) > 5 * 60000) loadTraffic();
+    if (Date.now() - (S.trafficBy[ll(currentDest())]?.at || 0) > 5 * 60000) refreshTraffic();
     loadNews();
   });
 }

@@ -34,11 +34,17 @@ window.DASH_CONFIG = {
   workerUrl: "https://home-base-api.zmueller1216.workers.dev",
 
   // Traffic panel: the drive to watch. Default is Ute Pass (US-24), Woodland Park to Colorado Springs.
+  // Commute panel: drive times from home, flipped through with the arrows.
+  // Only public places belong here (this file is public). Private addresses, like friends' homes,
+  // are added in the app under Settings → Commute places, which saves them to your private database.
   traffic: {
-    name: "Ute Pass",
-    road: "US-24",
+    road: "US-24", // incidents are shown for this road
     from: { name: "Woodland Park", lat: 38.9939, lon: -105.0569 },
-    to: { name: "Colorado Springs", lat: 38.8339, lon: -104.8214 },
+    destinations: [
+      { name: "Colorado Springs", title: "Ute Pass", lat: 38.8339, lon: -104.8214 },
+      { name: "Bear Creek Dog Park", lat: 38.8262, lon: -104.8617 },
+      { name: "Denver", lat: 39.7392, lon: -104.9849 },
+    ],
   },
 
   // Optional: paste your Firebase web config here to sync between devices (see SETUP.md).
