@@ -1084,7 +1084,8 @@ function drawTrafficMap(t, dest) {
   el.hidden = false;
   const flowUrl = `${WORKER}/tile/{z}/{x}/{y}.png?t=${t.at}`;
   if (!tmap) {
-    tmap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, tap: false });
+    tmap = L.map(el, { zoomControl: false, scrollWheelZoom: false, dragging: !L.Browser.mobile, tap: false })
+      .setView([TR.from.lat, TR.from.lon], 10); // a starting view, so markers can be placed before the route is fitted
     // OpenStreetMap's free map; in dark mode CSS inverts it (see .base-tiles in styles.css).
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18, className: "base-tiles",
