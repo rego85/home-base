@@ -474,6 +474,49 @@ html.wall .headlines li:nth-child(n+2) { display: none; }
 html.wall #yardDetail { display: none; }
 html.wall #yardCard .big { font-size: 1.2rem; }
 
+/* Wall view fit fixes (checked on a 1920x1080 Skylight frame). */
+/* Weather: conditions in two rows, hi/lo side by side, one alert, so the 7-day strip fits. */
+html.wall .weather-body { gap: .5rem; }
+html.wall .now { gap: .8rem; }
+html.wall .now-temp { font-size: 3.1rem; }
+html.wall .now-icon { width: 3.6rem; height: 3.6rem; }
+html.wall .now-meta { grid-template-columns: auto auto auto auto; gap: 1px 12px; flex-basis: 100%; }
+html.wall .alerts .alert:nth-child(n+2) { display: none; }
+html.wall .alert { padding: .4rem .7rem; }
+html.wall .day {
+  display: grid; grid-template-columns: 1fr 1fr; justify-items: center; align-items: center;
+  gap: 0 .15rem; padding: .35rem .15rem;
+}
+html.wall .day .d, html.wall .day svg, html.wall .day .pp { grid-column: 1 / -1; }
+html.wall .day svg { width: 1.8rem; height: 1.8rem; }
+html.wall .day .pp { min-height: 0; font-size: .72rem; }
+html.wall .day .pp:empty { display: none; }
+html.wall .day .hi, html.wall .day .lo { font-size: .78rem; }
+/* Yard: day boxes and the "Mark done" button share one row so the button isn't cut off. */
+html.wall #yardCard { flex-direction: row; flex-wrap: wrap; align-content: flex-start; align-items: center; }
+html.wall #yardCard .card-head, html.wall #yardCard .big { flex: 1 0 100%; }
+html.wall #yardCard .weekend-compare { flex: 1 1 0; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); }
+html.wall .wk .d { gap: .5rem; }
+html.wall .wk { padding: .3rem .6rem; font-size: .8rem; }
+html.wall #yardBtn { flex: none; margin-top: 0; padding: .4rem .9rem; font-size: .9rem; }
+/* News: at most three lines of headline; drop the extra headline when the bins banner takes a row. */
+html.wall .headline { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+html.wall .grid.show-bins .headlines { display: none; }
+/* Bills: two lines per bill, buttons side by side, and a fade where the list scrolls.
+   "Open email" is hidden: it would leave the dashboard on a wall display. */
+html.wall .bill-list li { padding: .45rem 0; }
+html.wall .bill-main .when.src { display: none; }
+html.wall .bill-actions { flex-direction: row; gap: .3rem; }
+html.wall .bill-list, html.wall .groceries .checklist {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6rem), transparent);
+}
+/* Today strip: fade the last chip out instead of cutting it mid-word. */
+html.wall .today {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 4rem), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 4rem), transparent);
+}
+
 /* Bins: which bins go out this week */
 .bin-pills { display: flex; gap: .5rem; flex-wrap: wrap; }
 .bin {

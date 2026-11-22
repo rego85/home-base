@@ -957,7 +957,7 @@ function renderBills() {
       <div class="bill-main">
         <div class="bill-top"><span class="name">${esc(b.payee)}</span><span class="amt">${esc(money(b.amount))}</span></div>
         <div class="when ${due.cls}">${esc(due.text)}${b.autopay ? ' <span class="pill">Autopay</span>' : ""}</div>
-        <div class="when"><a href="https://mail.google.com/mail/?authuser=${encodeURIComponent(b.account || "")}#all/${esc(b.msgId)}" target="_blank" rel="noopener">Open email</a>${b.account && gmailAccounts.length > 1 ? ` · ${esc(b.account)}` : ""}</div>
+        <div class="when src"><a href="https://mail.google.com/mail/?authuser=${encodeURIComponent(b.account || "")}#all/${esc(b.msgId)}" target="_blank" rel="noopener">Open email</a>${b.account && gmailAccounts.length > 1 ? ` · ${esc(b.account)}` : ""}</div>
       </div>
       <div class="bill-actions">
         <button class="ghost small" data-act="paid">Paid</button>
