@@ -998,17 +998,62 @@ $("billList").addEventListener("click", (e) => {
 });
 
 /* ---------- calendar ---------- */
-function renderCalendar() {
-  const url = (CFG.calendarEmbedUrl || "").trim();
-  if (url) {
-    const u = new URL(url);
-    if (!u.searchParams.has("mode")) u.searchParams.set("mode", "AGENDA");
-    u.searchParams.set("showTitle", "0");
-    u.searchParams.set("showPrint", "0");
-    $("calendarBody").innerHTML = `<iframe class="cal-frame" title="Google Calendar" src="${esc(u.toString())}" loading="lazy"></iframe>`;
-  } else {
-    $("calendarBody").innerHTML = `<div class="cal-empty">Your agenda will show here. Paste your Google Calendar embed link into <code>calendarEmbedUrl</code> in <code>config.js</code>. SETUP.md, step 5, shows how.</div>`;
+// Upcoming events, read by the worker from your Google Calendar's private iCal address.
+S.calendar = null; // { events, at } or { error }
+async function loadCalendar() {
+  if (!CFG.workerUrl || !S.store?.token) return renderCalendar();
+  try {
+    const res = await fetch(CFG.workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${await S.store.token()}` },
+      body: JSON.stringify({ kind: "calendar", days: 14 }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Calendar error ${res.status}`);
+    S.calendar = { events: data.events || [], at: Date.now() };
+  } catch (e) {
+    S.calendar = { ...(S.calendar || {}), error: e.message };
   }
+  renderCalendar();
+}
+function renderCalendar() {
+  const body = $("calendarBody");
+  const c = S.calendar;
+  if (!c) { body.innerHTML = `<p class="muted">Loading your calendar…</p>`; return; }
+  if (!c.events) { body.innerHTML = `<div class="cal-empty">${esc(c.error || "Your calendar isn't connected yet.")}</div>`; return; }
+  const today = startOfDay(new Date());
+  const now = Date.now();
+  // Group by day. All-day events spanning several days appear on each of their days.
+  const byDay = new Map();
+  const addTo = (d, item) => { const k = ymd(d); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(item); };
+  for (const e of c.events) {
+    if (e.allDay) {
+      for (let d = parseYmd(e.start); d < parseYmd(e.end); d = addDays(d, 1)) if (d >= today) addTo(d, e);
+    } else {
+      if (new Date(e.end).getTime() < now) continue; // already over
+      addTo(new Date(e.start) < today ? today : new Date(e.start), e);
+    }
+  }
+  const days = [...byDay.keys()].sort();
+  if (!days.length) { body.innerHTML = `<p class="muted">Nothing on your calendar for the next two weeks.</p>`; return; }
+  const label = (k) => {
+    const diff = daysBetween(today, parseYmd(k));
+    return diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : fmtDay(parseYmd(k), { weekday: "long", month: "short", day: "numeric" });
+  };
+  const time = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const showCal = new Set(c.events.map((e) => e.cal)).size > 1;
+  body.innerHTML = `<div class="agenda">${days.slice(0, 10).map((k) => `
+    <section class="agenda-day ${k === ymd(today) ? "is-today" : ""}">
+      <h3>${esc(label(k))}</h3>
+      <ul>${byDay.get(k).map((e) => {
+        const happening = !e.allDay && new Date(e.start).getTime() <= now && new Date(e.end).getTime() > now;
+        return `<li class="${happening ? "now" : ""}">
+          <span class="when">${e.allDay ? "All day" : esc(time(e.start))}</span>
+          <span class="what">${esc(e.title)}${showCal && e.cal ? ` <span class="cal-tag">${esc(e.cal)}</span>` : ""}${e.location ? `<span class="where">${esc(e.location)}</span>` : ""}</span>
+        </li>`;
+      }).join("")}</ul>
+    </section>`).join("")}</div>
+    ${c.error ? `<p class="error small">Last refresh failed: ${esc(c.error)}</p>` : ""}`;
 }
 
 /* ---------- traffic ---------- */
@@ -1248,6 +1293,7 @@ function renderAll() {
   const due = renderChores();
   const bills = renderBills();
   renderNotes();
+  renderCalendar();
   renderTraffic(); // keeps the commute card and snow note current
   renderToday(bins, yard, moon, due, bills);
   applyPanels();
@@ -1441,7 +1487,9 @@ async function boot() {
   loadWeather();
   refreshTraffic();
   loadNews();
+  loadCalendar();
   setInterval(loadWeather, 30 * 60000);
+  setInterval(() => document.visibilityState === "visible" && loadCalendar(), 15 * 60000);
   setInterval(() => document.visibilityState === "visible" && refreshTraffic(), 5 * 60000);
   setInterval(() => loadNews(true), 30 * 60000);
   setInterval(renderAll, 60000);
@@ -1450,6 +1498,7 @@ async function boot() {
     if (Date.now() - (S.weather?.fetchedAt || 0) > 15 * 60000) loadWeather();
     if (Date.now() - (S.trafficBy[ll(currentDest())]?.at || 0) > 5 * 60000) refreshTraffic();
     loadNews();
+    if (Date.now() - (S.calendar?.at || 0) > 10 * 60000) loadCalendar();
   });
 }
 

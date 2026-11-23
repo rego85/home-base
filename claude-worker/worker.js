@@ -85,6 +85,7 @@ export default {
     // 2. Read the request.
     const body = await request.json().catch(() => ({}));
     if (body.kind === "bills") { const out = await readBills(body, env); return json(out, out.error ? 502 : 200); }
+    if (body.kind === "calendar") { const out = await readCalendar(body, env); return json(out, out.error ? 502 : 200); }
     const text = String(body.text || "").slice(0, 500).trim();
     const current = Array.isArray(body.current) ? body.current.slice(0, 200).map((s) => String(s).slice(0, 100)) : [];
     if (!text) return json({ error: "Nothing was said." }, 400);
@@ -292,4 +293,167 @@ async function readBills(body, env) {
   const r = await askClaude(env, BILLS_SYSTEM, BILLS_SCHEMA, content);
   if (r.error || r.refused) return { error: r.error || "Claude couldn't read these emails." };
   return { bills: (r.data.bills || []).filter((b) => emails.some((e) => e.id === b.id)) };
+}
+
+// ---------- Calendar: upcoming events from private iCal addresses ----------
+// CALENDAR_ICS (secret): one or more "Secret address in iCal format" links from Google Calendar,
+// separated by spaces, commas or new lines. Optionally prefix a link with a label and "|", e.g.
+// "Zachary|https://calendar.google.com/calendar/ical/.../basic.ics".
+const HOME_TZ = "America/Denver";
+const pad2 = (n) => String(n).padStart(2, "0");
+// Offset in ms between UTC and the wall-clock time in `tz` at instant `ms`.
+function tzOffset(ms, tz) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000;
+}
+// A wall-clock time (encoded as a UTC timestamp) in `tz`, converted to the real instant.
+function wallToUtc(wall, tz) {
+  if (tz === "UTC") return wall;
+  let ms = wall - tzOffset(wall, tz);
+  ms = wall - tzOffset(ms, tz); // second pass settles daylight-saving edges
+  return ms;
+}
+function parseIcsDate(value, params) {
+  const m = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, z] = m;
+  if (!h || params.VALUE === "DATE") return { allDay: true, wall: Date.UTC(+y, +mo - 1, +d), tz: "UTC" };
+  let tz = z ? "UTC" : params.TZID || HOME_TZ;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); } catch { tz = HOME_TZ; }
+  return { allDay: false, wall: Date.UTC(+y, +mo - 1, +d, +h, +mi, +s), tz };
+}
+function parseIcs(text) {
+  const lines = text.replace(/\r?\n[ \t]/g, "").split(/\r?\n/);
+  const events = [];
+  let ev = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") { ev = { exdates: [] }; continue; }
+    if (line === "END:VEVENT") { if (ev) events.push(ev); ev = null; continue; }
+    if (!ev) continue;
+    const i = line.indexOf(":");
+    if (i < 0) continue;
+    const [name, ...rawParams] = line.slice(0, i).split(";");
+    const params = Object.fromEntries(rawParams.map((p) => { const [k, v = ""] = p.split("="); return [k.toUpperCase(), v.replace(/^"|"$/g, "")]; }));
+    const value = line.slice(i + 1);
+    const clean = () => value.replace(/\\n/gi, " ").replace(/\\([,;\\])/g, "$1").trim();
+    switch (name.toUpperCase()) {
+      case "SUMMARY": ev.title = clean(); break;
+      case "LOCATION": ev.location = clean(); break;
+      case "UID": ev.uid = value; break;
+      case "STATUS": ev.status = value.toUpperCase(); break;
+      case "DTSTART": ev.start = parseIcsDate(value, params); break;
+      case "DTEND": ev.end = parseIcsDate(value, params); break;
+      case "DURATION": ev.duration = value; break;
+      case "RRULE": ev.rrule = Object.fromEntries(value.split(";").map((p) => p.split("="))); break;
+      case "RECURRENCE-ID": ev.recurrenceId = parseIcsDate(value, params); break;
+      case "EXDATE": for (const v of value.split(",")) { const d = parseIcsDate(v, params); if (d) ev.exdates.push(d); } break;
+    }
+  }
+  return events;
+}
+function durationMs(s) {
+  const m = (s || "").match(/^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/);
+  if (!m) return 0;
+  const [, w, d, h, mi, se] = m.map((x) => +x || 0);
+  return (((w * 7 + d) * 24 + h) * 60 + mi) * 60000 + se * 1000;
+}
+const WEEKDAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+// Wall-clock start times of a (possibly repeating) event, from its first start up to `toWall`,
+// honouring FREQ, INTERVAL, COUNT, UNTIL, BYDAY and BYMONTHDAY.
+function occurrences(ev, toWall) {
+  const r = ev.rrule, start = ev.start.wall, tz = ev.start.tz;
+  if (!r) return [start];
+  const interval = Math.max(1, +r.INTERVAL || 1), count = +r.COUNT || Infinity;
+  const until = r.UNTIL ? parseIcsDate(r.UNTIL, {}) : null;
+  const untilUtc = until ? (until.allDay ? until.wall + 86399000 : wallToUtc(until.wall, until.tz)) : Infinity;
+  const s = new Date(start), timeOfDay = start % 86400000;
+  const byDay = (r.BYDAY || "").split(",").filter(Boolean).map((t) => {
+    const m = t.match(/^([+-]?\d+)?([A-Z]{2})$/);
+    return m ? { n: m[1] ? +m[1] : 0, wd: WEEKDAYS.indexOf(m[2]) } : null;
+  }).filter(Boolean);
+  const byMonthDay = (r.BYMONTHDAY || "").split(",").filter(Boolean).map(Number);
+  const daysInMonth = (y, m) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const out = [];
+  let n = 0, done = false;
+  for (let step = 0; step < 3000 && !done; step++) {
+    let cands = [];
+    if (r.FREQ === "DAILY") cands = [start + step * interval * 86400000];
+    else if (r.FREQ === "WEEKLY") {
+      const monday = start - ((s.getUTCDay() + 6) % 7) * 86400000 + step * interval * 7 * 86400000;
+      const wds = byDay.length ? byDay.map((b) => b.wd) : [s.getUTCDay()];
+      cands = wds.map((wd) => monday + ((wd + 6) % 7) * 86400000).sort((a, b) => a - b);
+    } else if (r.FREQ === "MONTHLY" || r.FREQ === "YEARLY") {
+      const months = s.getUTCMonth() + (r.FREQ === "MONTHLY" ? step * interval : step * interval * 12);
+      const y = s.getUTCFullYear() + Math.floor(months / 12), mo = months % 12;
+      const dim = daysInMonth(y, mo);
+      const at = (day) => Date.UTC(y, mo, day) + timeOfDay;
+      if (byDay.length) {
+        for (const b of byDay) {
+          const days = [];
+          for (let d = 1; d <= dim; d++) if (new Date(Date.UTC(y, mo, d)).getUTCDay() === b.wd) days.push(d);
+          const pick = b.n > 0 ? [days[b.n - 1]] : b.n < 0 ? [days[days.length + b.n]] : days;
+          for (const d of pick) if (d) cands.push(at(d));
+        }
+      } else if (byMonthDay.length) {
+        for (const md of byMonthDay) { const d = md > 0 ? md : dim + md + 1; if (d >= 1 && d <= dim) cands.push(at(d)); }
+      } else if (s.getUTCDate() <= dim) cands.push(at(s.getUTCDate()));
+      cands.sort((a, b) => a - b);
+    } else return [start];
+    for (const c of cands) {
+      if (c < start) continue;
+      if (c > toWall || n >= count) { done = true; break; }
+      if ((ev.start.allDay ? c : wallToUtc(c, tz)) > untilUtc) { done = true; break; }
+      n++;
+      out.push(c);
+    }
+  }
+  return out;
+}
+async function readCalendar(body, env) {
+  const links = (env.CALENDAR_ICS || "").split(/[\s,]+/).filter(Boolean).map((x) => {
+    const bar = x.indexOf("|");
+    return bar > 0 && !x.slice(0, bar).includes("://") ? { label: x.slice(0, bar), url: x.slice(bar + 1) } : { label: "", url: x };
+  }).filter((l) => /^https:\/\//.test(l.url));
+  if (!links.length) return { error: "No calendar is connected yet. Add CALENDAR_ICS to the worker (SETUP.md, step 5, shows how)." };
+  const days = Math.min(Math.max(+body.days || 14, 1), 31);
+  const now = Date.now();
+  const todayWall = Math.floor((now + tzOffset(now, HOME_TZ)) / 86400000) * 86400000; // midnight today in Denver
+  const endWallDay = todayWall + days * 86400000;
+  const fromUtc = wallToUtc(todayWall, HOME_TZ), toUtc = wallToUtc(endWallDay, HOME_TZ);
+  const iso = (w) => { const d = new Date(w); return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`; };
+  const out = [], errors = [];
+  for (const link of links) {
+    try {
+      const res = await fetch(link.url, { cf: { cacheTtl: 300, cacheEverything: true } });
+      if (!res.ok) { errors.push(`calendar error ${res.status}`); continue; }
+      const evs = parseIcs(await res.text()).filter((e) => e.start && e.status !== "CANCELLED");
+      const instKey = (d) => (d.allDay ? d.wall : wallToUtc(d.wall, d.tz));
+      // A changed single instance of a repeating event replaces that instance.
+      const moved = new Set(evs.filter((e) => e.recurrenceId).map((e) => `${e.uid}@${instKey(e.recurrenceId)}`));
+      for (const e of evs) {
+        const len = e.end ? e.end.wall - e.start.wall : e.duration ? durationMs(e.duration) : e.start.allDay ? 86400000 : 0;
+        const ex = new Set(e.exdates.map(instKey));
+        const limit = endWallDay + 2 * 86400000; // generous: wall times in other zones
+        for (const wall of occurrences(e, limit)) {
+          const key = e.start.allDay ? wall : wallToUtc(wall, e.start.tz);
+          if (ex.has(key) || (e.rrule && moved.has(`${e.uid}@${key}`))) continue;
+          if (e.start.allDay) {
+            const endWall = wall + Math.max(len, 86400000);
+            if (endWall <= todayWall || wall >= endWallDay) continue;
+            out.push({ title: e.title || "(No title)", allDay: true, start: iso(wall), end: iso(endWall), location: e.location || "", cal: link.label });
+          } else {
+            const endUtc = key + len;
+            if (endUtc <= fromUtc || key >= toUtc) continue;
+            out.push({ title: e.title || "(No title)", allDay: false, start: new Date(key).toISOString(), end: new Date(endUtc).toISOString(), location: e.location || "", cal: link.label });
+          }
+        }
+      }
+    } catch (err) { errors.push(String(err.message || err)); }
+  }
+  if (!out.length && errors.length) return { error: `Couldn't read the calendar (${errors[0]}).` };
+  // All-day events first on their day, then by start time.
+  const sortKey = (e) => (e.allDay ? `${e.start}T00:00:00.000Z#0` : `${e.start}#1`);
+  out.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : 1));
+  return { events: out.slice(0, 80), days };
 }

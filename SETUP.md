@@ -80,13 +80,17 @@ Do the same on your partner's phone.
 
 After changing any file, also change `VERSION` in `sw.js` (for example to `home-base-v2`) so installed phones pick up the update.
 
-## 5. Show your Google Calendar (optional)
+## 5. Show your Google Calendar
 
-1. On a computer, open https://calendar.google.com, then **⚙ Settings**, then click your calendar under *Settings for my calendars*.
-2. Scroll to **Integrate calendar** and copy the **Embed code** URL (the part inside `src="..."`).
-3. Paste it into `calendarEmbedUrl` in `config.js`.
+The **Calendar** card lists your next two weeks of events, grouped by day, with whatever is happening now highlighted. It also appears on the wall view, in place of the moon. The Cloudflare worker reads your calendar through its private iCal address, so it stays current with no Google pop-ups.
 
-The calendar stays private. It only shows events to someone signed in to a Google account that has access to it. To show both of your calendars, share your calendar with your partner in Google Calendar first, and add `&src=PARTNER_CALENDAR_ID` to the end of the embed URL.
+1. On a computer, open https://calendar.google.com, click **⚙ → Settings**, then click your calendar under **Settings for my calendars**.
+2. Scroll to **Integrate calendar** and copy the **Secret address in iCal format**. Treat it like a password: anyone with it can read your calendar.
+3. In Cloudflare, open the worker, go to **Settings → Variables and Secrets → Add variable**, name it `CALENDAR_ICS`, paste the address as the value, tick **Secret**, and click **Add variable and deploy**.
+
+To show more than one calendar (for example, your wife's), put several addresses in `CALENDAR_ICS`, separated by spaces. Optionally, put a name and `|` in front of each address, like `Zachary|https://…`. The card then labels each event with its calendar's name.
+
+The calendar only loads for people signed in to Home Base with an allowed account.
 
 ## 6. Voice groceries
 

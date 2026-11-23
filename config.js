@@ -16,9 +16,8 @@ window.DASH_CONFIG = {
   // Trash goes out every week; recycling joins it every `everyWeeks` weeks.
   recycling: { pickupDate: "2026-11-30", everyWeeks: 2 },
 
-  // Optional: Google Calendar embed link (see SETUP.md, step 5).
-  // Example: "https://calendar.google.com/calendar/embed?src=YOUR_CALENDAR_ID&ctz=America%2FDenver"
-  calendarEmbedUrl: "",
+  // Calendar: no setting here. The worker reads your calendar's private iCal address from its
+  // CALENDAR_ICS secret in Cloudflare (see SETUP.md, step 5), so the address never appears in this public file.
 
   // Optional: read upcoming bills from Gmail (see SETUP.md, step 7).
   gmail: {
